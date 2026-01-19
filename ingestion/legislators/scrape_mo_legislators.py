@@ -4,15 +4,14 @@ Scrapes Missouri House of Representatives legislators and inserts them into Supa
 """
 
 import asyncio
-import os
+import sys
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from playwright.async_api import async_playwright, Page, Browser
-from supabase import create_client, Client
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Add parent directory to path for db_utils import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from db_utils import Database
 
 
 class MoLegislatorScraper:
@@ -21,27 +20,20 @@ class MoLegislatorScraper:
     MEMBER_ROSTER_TEMPLATE = "https://archive.house.mo.gov/MemberGridCluster.aspx?year={year}&code={code}"
     CURRENT_ROSTER_URL = "https://house.mo.gov/MemberGridCluster.aspx"
 
-    def __init__(self, year: Optional[int] = None, session_code: str = "R", supabase_url: Optional[str] = None, supabase_key: Optional[str] = None):
+    def __init__(self, year: Optional[int] = None, session_code: str = "R", db: Optional[Database] = None):
         """
         Initialize the legislator scraper.
 
         Args:
             year: Legislative year (None for current session)
             session_code: Session code (R for Regular, E for Extraordinary)
-            supabase_url: Supabase project URL (defaults to env var SUPABASE_URL)
-            supabase_key: Supabase API key (defaults to env var SUPABASE_KEY)
+            db: Database instance for all database operations
         """
         self.year = year
         self.session_code = session_code
         self.browser: Optional[Browser] = None
         self.page: Optional[Page] = None
-
-        # Initialize Supabase client if credentials provided
-        self.supabase: Optional[Client] = None
-        url = supabase_url or os.getenv('SUPABASE_URL')
-        key = supabase_key or os.getenv('SUPABASE_KEY')
-        if url and key:
-            self.supabase = create_client(url, key)
+        self.db = db
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -267,98 +259,6 @@ class MoLegislatorScraper:
 
         return details
 
-    async def get_or_create_session(self) -> str:
-        """
-        Get or create the session record for this scraper's year/session_code.
-
-        Returns:
-            The UUID of the session
-        """
-        if not self.supabase:
-            raise RuntimeError("Supabase client not initialized")
-
-        year = self.year or 2026  # Default to current year if not specified
-
-        # Try to find existing session
-        response = self.supabase.table('sessions').select('id').eq(
-            'year', year
-        ).eq(
-            'session_code', self.session_code
-        ).execute()
-
-        if response.data:
-            return response.data[0]['id']
-        else:
-            # Create new session
-            insert_response = self.supabase.table('sessions').insert({
-                'year': year,
-                'session_code': self.session_code
-            }).execute()
-            return insert_response.data[0]['id']
-
-    async def upsert_legislator(self, legislator_data: Dict[str, Any], session_id: str) -> str:
-        """
-        Insert or update a legislator and link them to the session.
-
-        Args:
-            legislator_data: Dictionary with legislator details
-            session_id: UUID of the session
-
-        Returns:
-            Tuple of (legislator_id, was_updated)
-        """
-        if not self.supabase:
-            raise RuntimeError("Supabase client not initialized")
-
-        # Try to find existing legislator by name
-        response = self.supabase.table('legislators').select('id').eq(
-            'name', legislator_data['name']
-        ).execute()
-
-        legislator_record = {
-            'name': legislator_data['name'],
-            'legislator_type': legislator_data.get('legislator_type'),
-            'party_affiliation': legislator_data.get('party_affiliation'),
-            'year_elected': int(legislator_data['year_elected']) if legislator_data.get('year_elected') else None,
-            'years_served': int(legislator_data['years_served']) if legislator_data.get('years_served') else None,
-            'picture_url': legislator_data.get('picture_url'),
-            'is_active': legislator_data.get('is_active', True),
-            'profile_url': legislator_data.get('profile_url'),
-        }
-
-        was_updated = False
-        if response.data:
-            # Update existing legislator
-            legislator_id = response.data[0]['id']
-            self.supabase.table('legislators').update(legislator_record).eq('id', legislator_id).execute()
-            was_updated = True
-        else:
-            # Insert new legislator
-            insert_response = self.supabase.table('legislators').insert(legislator_record).execute()
-            legislator_id = insert_response.data[0]['id']
-
-        # Create or update session_legislators record
-        district = legislator_data.get('district', '')
-        session_leg_response = self.supabase.table('session_legislators').select('id').eq(
-            'session_id', session_id
-        ).eq(
-            'district', district
-        ).execute()
-
-        if session_leg_response.data:
-            # Update existing session_legislator record
-            self.supabase.table('session_legislators').update({
-                'legislator_id': legislator_id
-            }).eq('id', session_leg_response.data[0]['id']).execute()
-        else:
-            # Create new session_legislator record
-            self.supabase.table('session_legislators').insert({
-                'session_id': session_id,
-                'legislator_id': legislator_id,
-                'district': district
-            }).execute()
-
-        return legislator_id, was_updated
 
 
 async def main():
@@ -367,25 +267,23 @@ async def main():
 
     parser = argparse.ArgumentParser(description='Scrape Missouri House legislators and insert into Supabase')
     parser.add_argument('--year', type=int, help='Legislative year (omit for current session)')
-    parser.add_argument('--session-code', default='R', choices=['R', 'E'],
-                        help='Session code: R=Regular, E=Extraordinary')
-    parser.add_argument('--supabase-url', type=str,
-                        help='Supabase project URL (defaults to SUPABASE_URL env var)')
-    parser.add_argument('--supabase-key', type=str,
-                        help='Supabase API key (defaults to SUPABASE_KEY env var)')
+    parser.add_argument('--session-code', default='R', choices=['R', 'S1', 'S2'],
+                        help='Session code: R=Regular, S1=Special/1st Extraordinary, S2=2nd Extraordinary')
 
     args = parser.parse_args()
+
+    # Get Database instance
+    db = Database()
 
     # Run scraper
     async with MoLegislatorScraper(
         year=args.year,
         session_code=args.session_code,
-        supabase_url=args.supabase_url,
-        supabase_key=args.supabase_key
+        db=db
     ) as scraper:
         # Get or create session
-        session_id = await scraper.get_or_create_session()
         year = args.year or 2026
+        session_id = db.get_or_create_session(year, scraper.session_code)
         print(f"Using session: {year} {scraper.session_code} (ID: {session_id})")
 
         # Get list of legislators
@@ -406,8 +304,12 @@ async def main():
                 # Scrape full profile
                 details = await scraper.scrape_legislator_details(legislator['profile_url'])
 
-                # Upsert to database (pass session_id)
-                legislator_id, was_updated = await scraper.upsert_legislator(details, session_id)
+                # Upsert to database
+                legislator_id, was_updated = db.upsert_legislator(details)
+
+                # Link legislator to session
+                district = details.get('district', '')
+                db.link_legislator_to_session(session_id, legislator_id, district)
 
                 if was_updated:
                     print(f"  ✓ Updated in database with ID: {legislator_id}")

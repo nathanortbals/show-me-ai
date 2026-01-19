@@ -7,10 +7,14 @@ Session codes: R = Regular, S1 = Special/1st Extraordinary, S2 = 2nd Extraordina
 """
 
 import asyncio
+import sys
 from pathlib import Path
 
+# Add current directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
 from legislators.scrape_mo_legislators import MoLegislatorScraper
 from bills.scrape_mo_house_bills import MoHouseBillScraper
+from db_utils import Database
 
 
 # Define all sessions to scrape (year, session_code, description)
@@ -117,7 +121,7 @@ SESSIONS = [
 ]
 
 
-async def scrape_legislators_for_session(year: int, session_code: str, description: str) -> tuple[int, int]:
+async def scrape_legislators_for_session(year: int, session_code: str, description: str, db: Database) -> tuple[int, int]:
     """
     Scrape all legislators for a session.
 
@@ -125,6 +129,7 @@ async def scrape_legislators_for_session(year: int, session_code: str, descripti
         year: Legislative year
         session_code: Session code (R, S1, S2)
         description: Human-readable description
+        db: Database instance
 
     Returns:
         Tuple of (inserted_count, updated_count)
@@ -134,9 +139,9 @@ async def scrape_legislators_for_session(year: int, session_code: str, descripti
     print(f"{'='*80}")
 
     try:
-        async with MoLegislatorScraper(year=year, session_code=session_code) as scraper:
+        async with MoLegislatorScraper(year=year, session_code=session_code, db=db) as scraper:
             # Get or create session
-            session_id = await scraper.get_or_create_session()
+            session_id = db.get_or_create_session(year, session_code)
             print(f"Session ID: {session_id}")
 
             # Get list of legislators
@@ -160,7 +165,11 @@ async def scrape_legislators_for_session(year: int, session_code: str, descripti
                     details = await scraper.scrape_legislator_details(legislator['profile_url'])
 
                     # Upsert to database
-                    legislator_id, was_updated = await scraper.upsert_legislator(details, session_id)
+                    legislator_id, was_updated = db.upsert_legislator(details)
+
+                    # Link legislator to session
+                    district = details.get('district', '')
+                    db.link_legislator_to_session(session_id, legislator_id, district)
 
                     if was_updated:
                         updated_count += 1
@@ -179,7 +188,7 @@ async def scrape_legislators_for_session(year: int, session_code: str, descripti
         return 0, 0
 
 
-async def scrape_bills_for_session(year: int, session_code: str, description: str) -> tuple[int, int]:
+async def scrape_bills_for_session(year: int, session_code: str, description: str, db: Database) -> tuple[int, int]:
     """
     Scrape all bills for a session.
 
@@ -187,6 +196,7 @@ async def scrape_bills_for_session(year: int, session_code: str, description: st
         year: Legislative year
         session_code: Session code (R, S1, S2)
         description: Human-readable description
+        db: Database instance
 
     Returns:
         Tuple of (inserted_count, updated_count)
@@ -196,9 +206,9 @@ async def scrape_bills_for_session(year: int, session_code: str, description: st
     print(f"{'='*80}")
 
     try:
-        async with MoHouseBillScraper(year=year, session_code=session_code) as scraper:
+        async with MoHouseBillScraper(year=year, session_code=session_code, db=db) as scraper:
             # Get or create session
-            scraper.session_id = await scraper.get_or_create_session()
+            scraper.session_id = scraper.get_or_create_session_sync()
             print(f"Session ID: {scraper.session_id}")
 
             # Get list of bills
@@ -289,6 +299,9 @@ async def main():
     print("="*80)
     print(f"\nTotal sessions to process: {len(SESSIONS)}")
 
+    # Get Database instance (shared across all sessions)
+    db = Database()
+
     overall_stats = {
         'sessions_processed': 0,
         'sessions_failed': 0,
@@ -301,12 +314,12 @@ async def main():
     for year, session_code, description in SESSIONS:
         try:
             # Step 1: Scrape legislators
-            leg_inserted, leg_updated = await scrape_legislators_for_session(year, session_code, description)
+            leg_inserted, leg_updated = await scrape_legislators_for_session(year, session_code, description, db)
             overall_stats['legislators_inserted'] += leg_inserted
             overall_stats['legislators_updated'] += leg_updated
 
             # Step 2: Scrape bills
-            bill_inserted, bill_updated = await scrape_bills_for_session(year, session_code, description)
+            bill_inserted, bill_updated = await scrape_bills_for_session(year, session_code, description, db)
             overall_stats['bills_inserted'] += bill_inserted
             overall_stats['bills_updated'] += bill_updated
 
