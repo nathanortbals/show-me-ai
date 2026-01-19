@@ -118,6 +118,8 @@ SUPABASE_KEY=your-api-key
 
 ### Usage
 
+#### Single Session
+
 The scraping process follows a 2-step workflow:
 
 **Step 1: Scrape Legislators**
@@ -129,6 +131,15 @@ uv run python ingestion/legislators/scrape_mo_legislators.py --year 2023
 ```bash
 uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023
 ```
+
+#### All Sessions (2026-2000)
+
+To scrape all sessions at once:
+```bash
+uv run python ingestion/scrape_all_sessions.py
+```
+
+This will process sessions from 2026 back to 2000. The script is idempotent and can be safely interrupted and resumed.
 
 For detailed usage instructions and options, see:
 - [Legislator Scraper Documentation](ingestion/legislators/README.md)
@@ -147,6 +158,7 @@ mo-bills/
 ├── ingestion/
 │   ├── bills/                      # Bill scraper
 │   ├── legislators/                # Legislator scraper
+│   ├── scrape_all_sessions.py      # Batch scraper for all sessions
 │   └── db_utils.py                 # Shared database utilities
 ├── bill_pdfs/                      # Downloaded PDFs (gitignored)
 ├── DATABASE_SCHEMA.md              # Database documentation

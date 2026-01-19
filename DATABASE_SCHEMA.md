@@ -17,7 +17,7 @@ Legislative sessions representing a specific year and session type.
 |--------|------|-------------|-------------|
 | id | uuid | PRIMARY KEY | Unique identifier |
 | year | integer | NOT NULL | Legislative year (e.g., 2023) |
-| session_code | text | NOT NULL, CHECK | 'R' for Regular, 'E' for Extraordinary |
+| session_code | text | NOT NULL, CHECK | 'R' = Regular, 'S1' = Special/1st Extraordinary, 'S2' = 2nd Extraordinary |
 | start_date | date | | Session start date (optional) |
 | end_date | date | | Session end date (optional) |
 | created_at | timestamptz | DEFAULT NOW() | Record creation timestamp |
