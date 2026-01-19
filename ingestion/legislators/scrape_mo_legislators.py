@@ -304,6 +304,11 @@ async def main():
                 # Scrape full profile
                 details = await scraper.scrape_legislator_details(legislator['profile_url'])
 
+                # Skip vacant districts (no legislator_type means vacant)
+                if not details.get('legislator_type'):
+                    print(f"  ⊘ Skipped (vacant district)")
+                    continue
+
                 # Upsert to database
                 legislator_id, was_updated = db.upsert_legislator(details)
 
