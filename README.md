@@ -1,4 +1,4 @@
-# Missouri Bills AI Chatbot
+# MO Bills
 
 An AI-powered chatbot for querying and analyzing Missouri House of Representatives bills using RAG (Retrieval-Augmented Generation).
 
@@ -8,9 +8,11 @@ This project aims to make Missouri legislative information accessible and querya
 
 ## Current Status
 
-🟢 **Phase 1: Data Ingestion** (Completed)
+🟡 **Phase 1: Data Ingestion** (In Progress)
 
-We have a fully functional web scraper that extracts comprehensive bill data from the Missouri House of Representatives website.
+- ✅ Web scraper built and functional
+- ✅ Comprehensive bill data extraction (sponsors, actions, hearings, PDFs)
+- ⏳ Database integration with Supabase (next step)
 
 ## Architecture (Planned)
 
@@ -54,17 +56,19 @@ We have a fully functional web scraper that extracts comprehensive bill data fro
 
 ## Project Roadmap
 
-- [x] **Phase 1: Data Ingestion**
+- [ ] **Phase 1: Data Ingestion & Storage**
   - [x] Scrape bill metadata (sponsors, actions, hearings)
   - [x] Download bill text PDFs
   - [x] Export to structured CSV format
-
-- [ ] **Phase 2: Database & Vectorization**
   - [ ] Set up Supabase PostgreSQL instance
+  - [ ] Design database schema
+  - [ ] Import scraped bill data into Supabase
+
+- [ ] **Phase 2: Vectorization & RAG Setup**
   - [ ] Configure pgvector extension
-  - [ ] Import bill data into database
   - [ ] Generate embeddings for bill text and metadata
   - [ ] Create vector indexes for similarity search
+  - [ ] Test semantic search capabilities
 
 - [ ] **Phase 3: AI Agent Development**
   - [ ] Build LangChain/LangGraph agent
@@ -122,7 +126,7 @@ uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023
 This will:
 - Scrape comprehensive bill data (sponsors, co-sponsors, actions, hearings)
 - Download all bill text PDFs
-- Save data to `mo-house-bills-2023-R.csv`
+- Save data to `mo-house-bills-2023-R.csv` (temporary - will be imported to Supabase)
 - Store PDFs in `bill_pdfs/` organized by bill number
 
 #### Options
