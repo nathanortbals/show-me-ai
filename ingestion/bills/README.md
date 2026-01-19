@@ -1,29 +1,39 @@
 # Missouri House Bill Scraper
 
-This Python Playwright script scrapes House bills from the Missouri House of Representatives website.
+This script scrapes Missouri House of Representatives bills and inserts them into Supabase.
+
+## Purpose
+
+Run this script **after** scraping legislators to ensure all bill sponsors can be properly linked to their complete profiles in the database.
 
 ## Installation
 
-This project uses [UV](https://github.com/astral-sh/uv) for fast, reliable dependency management.
+Dependencies are already installed via the main project. Make sure you've run:
 
-1. Install UV (if not already installed):
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-2. Install project dependencies:
 ```bash
 uv sync
-```
-
-3. Install Playwright browsers:
-```bash
 uv run playwright install chromium
 ```
 
 ## Usage
 
-The scraper automatically downloads comprehensive bill data including co-sponsors, actions, hearings, and PDF documents.
+### Recommended Workflow
+
+For best results, always scrape legislators first, then bills:
+
+**Step 1: Scrape Legislators**
+
+```bash
+uv run python ingestion/legislators/scrape_mo_legislators.py --year 2023
+```
+
+**Step 2: Scrape Bills**
+
+```bash
+uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023
+```
+
+This ensures all legislator profiles are complete before bills reference them as sponsors.
 
 ### Scrape Current Session Bills
 
@@ -31,7 +41,7 @@ The scraper automatically downloads comprehensive bill data including co-sponsor
 uv run python ingestion/bills/scrape_mo_house_bills.py
 ```
 
-This will scrape all bills from the current legislative session and save to `mo-house-bills-current-R.csv`.
+Omit the `--year` parameter to scrape bills from the current legislative session.
 
 ### Scrape Specific Year
 
@@ -39,18 +49,16 @@ This will scrape all bills from the current legislative session and save to `mo-
 uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023
 ```
 
-This will scrape all bills from the 2023 regular session and save to `mo-house-bills-2023-R.csv`.
+This will:
+- Scrape all bills from the 2023 regular session
+- Link sponsors to existing legislators in the database
+- Download all bill text PDFs to `bill_pdfs/`
+- Insert all data directly into Supabase database
 
 ### Scrape Extraordinary Session
 
 ```bash
 uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023 --session-code E
-```
-
-### Custom Output File
-
-```bash
-uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023 --output my-bills.csv
 ```
 
 ### Test with Limited Bills
@@ -69,71 +77,90 @@ By default, PDFs are saved to `bill_pdfs/`. You can specify a custom directory:
 uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023 --pdf-dir my_pdfs
 ```
 
-## Command Line Options
+## Options
 
 - `--year`: Legislative year (omit for current session)
 - `--session-code`: Session type - `R` for Regular (default), `E` for Extraordinary
-- `--output`: Custom output CSV filename
 - `--limit`: Limit number of bills to scrape (useful for testing)
 - `--pdf-dir`: Directory to save PDFs (default: `bill_pdfs`)
+- `--supabase-url`: Override SUPABASE_URL env var
+- `--supabase-key`: Override SUPABASE_KEY env var
 
-## Output Format
+## Output
 
-The script generates a comprehensive CSV file with the following columns:
+The script provides progress output showing:
+- Number of bills found
+- Progress for each bill (X/Y)
+- Whether each bill was inserted or updated
+- Warnings for any errors
+- Final summary with counts
 
-### Basic Information
-- `bill_number`: Bill identifier (e.g., HB1607)
-- `bill_url`: URL to the bill's detail page
-- `title`: Full bill title
-- `description`: Brief description of the bill
+Example:
+```
+Found 1234 bills
 
-### Sponsor Information
-- `sponsor`: Primary sponsor name
-- `sponsor_url`: URL to sponsor's profile
-- `cosponsors`: Semicolon-separated list of co-sponsor names
+Scraping detailed information for 1234 bills...
+[1/1234] Scraping details for HB1...
+  ✓ Inserted to database with ID: abc123...
+[2/1234] Scraping details for HB2...
+  ✓ Updated in database with ID: def456...
+...
 
-### Legislative Details
-- `lr_number`: Legislative Request number
-- `bill_string`: Bill identifier string
-- `last_action`: Most recent action taken on the bill
-- `proposed_effective_date`: When the bill would take effect
-- `calendar_status`: Current calendar status
-- `hearing_status`: Next hearing information
+✓ Successfully processed 1234 bills into database
+```
 
-### Complete History
-- `actions`: Double-pipe-separated list of all bill actions (format: `date | description || date | description`)
-- `hearings`: Double-pipe-separated list of hearings (format: `committee | date | time | location || committee | date | time | location`)
+## Data Collected
 
-### Bill Documents
-- `bill_documents`: Double-pipe-separated list of bill document PDFs (format: `type | url || type | url`)
-- `downloaded_pdfs`: Semicolon-separated list of local PDF file paths
+For each bill:
+- **Bill number** - Identifier (e.g., HB1607)
+- **Title and description** - Full bill text summary
+- **Sponsors** - Primary sponsor and co-sponsors linked to legislators table
+- **Legislative details** - LR number, bill string, effective date
+- **Status** - Last action, calendar status, hearing status
+- **Complete history** - All bill actions with dates
+- **Hearings** - Committee hearings with dates, times, and locations
+- **Documents** - Bill text PDFs in multiple versions
+
+## Idempotency
+
+The scraper is idempotent - you can run it multiple times on the same session and it will:
+- Update existing bills with latest information
+- Insert new bills that weren't in the database
+- Delete and re-insert related data (sponsors, actions, hearings, documents)
+- Not create duplicates (uses bill_number + year + session_code as unique key)
 
 ## Data Sources
 
-- Current session: https://house.mo.gov/billlist.aspx
-- Archive sessions: https://archive.house.mo.gov/billlist.aspx?year={year}&code={code}
-- Bill details: https://archive.house.mo.gov/BillContent.aspx?bill={bill}&year={year}&code={code}&style=new
+All data is scraped from official Missouri House of Representatives websites:
+
+**Current session:**
+- Bills: https://house.mo.gov/billlist.aspx
+- Details: https://house.mo.gov/BillContent.aspx
+
+**Archive sessions:**
+- Bills: https://archive.house.mo.gov/billlist.aspx?year={year}&code={code}
+- Details: https://archive.house.mo.gov/BillContent.aspx?bill={bill}&year={year}&code={code}
 - Co-sponsors: https://archive.house.mo.gov/CoSponsors.aspx?bill={bill}&year={year}&code={code}
-- Bill actions: https://archive.house.mo.gov/BillActions.aspx?bill={bill}&year={year}&code={code}
-- Bill hearings: https://archive.house.mo.gov/BillHearings.aspx?Bill={bill}&year={year}&code={code}
+- Actions: https://archive.house.mo.gov/BillActions.aspx?bill={bill}&year={year}&code={code}
+- Hearings: https://archive.house.mo.gov/BillHearings.aspx?Bill={bill}&year={year}&code={code}
 
-## Example
+## Environment Setup
+
+The scraper requires Supabase credentials to be configured. Create a `.env` file in the project root:
 
 ```bash
-# Scrape 2023 regular session with all details and PDFs
-uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023 --output 2023-regular-session.csv
+SUPABASE_URL=your-project-url
+SUPABASE_KEY=your-api-key
 ```
 
-This will create a comprehensive CSV file with all bill data and download bill text PDFs to the `bill_pdfs/` directory.
+The scraper will automatically load these credentials from the `.env` file.
 
-## Development
+## Legislator Linking
 
-To add new dependencies:
-```bash
-uv add package-name
-```
+The scraper links bill sponsors to legislators in the database:
 
-To add development dependencies:
-```bash
-uv add --dev package-name
-```
+1. **Primary sponsors**: Looks up by name in legislators table
+2. **Co-sponsors**: Looks up by name in legislators table
+3. **Missing legislators**: Creates placeholder records with warning
+
+If you see warnings like "Primary sponsor 'John Doe' not found in database", run the legislator scraper first to populate complete legislator profiles.

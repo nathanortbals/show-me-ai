@@ -8,11 +8,13 @@ This project aims to make Missouri legislative information accessible and querya
 
 ## Current Status
 
-🟡 **Phase 1: Data Ingestion** (In Progress)
+🟢 **Phase 1: Data Ingestion & Storage** (Complete)
 
 - ✅ Web scraper built and functional
 - ✅ Comprehensive bill data extraction (sponsors, actions, hearings, PDFs)
-- ⏳ Database integration with Supabase (next step)
+- ✅ Legislator profile scraping (party, years served, active status)
+- ✅ Session-based database architecture
+- ✅ Direct insertion into PostgreSQL with pgvector
 
 ## Architecture (Planned)
 
@@ -41,31 +43,27 @@ This project aims to make Missouri legislative information accessible and querya
 
 ## Technology Stack
 
-### Current (Ingestion)
+**Current:**
 - **Python 3.9+** - Core language
 - **Playwright** - Web scraping and automation
 - **UV** - Fast Python package management
-- **httpx** - Async HTTP client for PDF downloads
+- **Supabase** - PostgreSQL database with pgvector extension
 
-### Planned
+**Planned:**
 - **LangGraph/LangChain** - AI agent orchestration
 - **FastAPI** - REST API backend
 - **React** - Frontend user interface
-- **PostgreSQL (Supabase)** - Database with pgvector extension
-- **pgvector** - Vector similarity search for RAG
 
 ## Project Roadmap
 
-- [ ] **Phase 1: Data Ingestion & Storage**
+- [x] **Phase 1: Data Ingestion & Storage**
   - [x] Scrape bill metadata (sponsors, actions, hearings)
+  - [x] Scrape legislator details (party, years served, active status)
   - [x] Download bill text PDFs
-  - [x] Export to structured CSV format
-  - [ ] Set up Supabase PostgreSQL instance
-  - [ ] Design database schema
-  - [ ] Import scraped bill data into Supabase
+  - [x] Design session-based database schema
+  - [x] Direct insertion of scraped data into Supabase
 
 - [ ] **Phase 2: Vectorization & RAG Setup**
-  - [ ] Configure pgvector extension
   - [ ] Generate embeddings for bill text and metadata
   - [ ] Create vector indexes for similarity search
   - [ ] Test semantic search capabilities
@@ -74,18 +72,15 @@ This project aims to make Missouri legislative information accessible and querya
   - [ ] Build LangChain/LangGraph agent
   - [ ] Implement RAG pipeline
   - [ ] Create tools for querying bill data
-  - [ ] Add conversation memory and context handling
 
 - [ ] **Phase 4: API Backend**
   - [ ] Build FastAPI application
   - [ ] Create REST endpoints for chat interactions
-  - [ ] Implement authentication and rate limiting
-  - [ ] Add API documentation
+  - [ ] Implement authentication
 
 - [ ] **Phase 5: Frontend**
   - [ ] Build React chat interface
   - [ ] Implement real-time messaging
-  - [ ] Add bill visualization components
   - [ ] Deploy to production
 
 ## Getting Started
@@ -113,85 +108,52 @@ uv sync
 uv run playwright install chromium
 ```
 
+4. Configure Supabase credentials:
+
+Create a `.env` file in the project root:
+```bash
+SUPABASE_URL=your-project-url
+SUPABASE_KEY=your-api-key
+```
+
 ### Usage
 
-#### Scrape Bills
+The scraping process follows a 2-step workflow:
 
-Scrape all bills from a specific legislative session:
+**Step 1: Scrape Legislators**
+```bash
+uv run python ingestion/legislators/scrape_mo_legislators.py --year 2023
+```
 
+**Step 2: Scrape Bills**
 ```bash
 uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023
 ```
 
-This will:
-- Scrape comprehensive bill data (sponsors, co-sponsors, actions, hearings)
-- Download all bill text PDFs
-- Save data to `mo-house-bills-2023-R.csv` (temporary - will be imported to Supabase)
-- Store PDFs in `bill_pdfs/` organized by bill number
+For detailed usage instructions and options, see:
+- [Legislator Scraper Documentation](ingestion/legislators/README.md)
+- [Bill Scraper Documentation](ingestion/bills/README.md)
 
-#### Options
+## Documentation
 
-- `--year`: Legislative year (omit for current session)
-- `--session-code`: Session type - `R` for Regular (default), `E` for Extraordinary
-- `--output`: Custom output CSV filename
-- `--limit`: Limit number of bills (useful for testing)
-- `--pdf-dir`: Custom directory for PDFs (default: `bill_pdfs`)
-
-#### Example: Test with Limited Bills
-
-```bash
-uv run python ingestion/bills/scrape_mo_house_bills.py --year 2023 --limit 10
-```
-
-## Data Collected
-
-For each bill, the scraper extracts:
-
-### Basic Information
-- Bill number and title
-- Full description
-- Bill URLs
-
-### Sponsors
-- Primary sponsor with profile URL
-- All co-sponsors
-
-### Legislative History
-- All legislative actions with dates
-- Committee hearings (date, time, location, committee)
-
-### Documents
-- Bill text in multiple versions (Introduced, Committee, Perfected, Truly Agreed)
-- Downloaded PDF files with local paths
-
-### Status Information
-- LR number and bill string
-- Last action and effective date
-- Calendar and hearing status
+- **[Database Schema](DATABASE_SCHEMA.md)** - Complete schema documentation with table definitions, relationships, and example queries
+- **[Legislator Scraper](ingestion/legislators/README.md)** - Scraper usage, options, and data sources
+- **[Bill Scraper](ingestion/bills/README.md)** - Scraper usage, options, and data sources
 
 ## Project Structure
 
 ```
 mo-bills/
 ├── ingestion/
-│   └── bills/
-│       ├── scrape_mo_house_bills.py  # Bill scraper
-│       ├── README.md                  # Ingestion documentation
-│       └── __init__.py
-├── bill_pdfs/                         # Downloaded bill PDFs (gitignored)
-├── pyproject.toml                     # Project dependencies
-├── .gitignore
-└── README.md                          # This file
+│   ├── bills/                      # Bill scraper
+│   ├── legislators/                # Legislator scraper
+│   └── db_utils.py                 # Shared database utilities
+├── bill_pdfs/                      # Downloaded PDFs (gitignored)
+├── DATABASE_SCHEMA.md              # Database documentation
+├── pyproject.toml                  # Project dependencies
+├── .env                            # Credentials (gitignored)
+└── README.md                       # This file
 ```
-
-## Data Sources
-
-- **Current session**: https://house.mo.gov/billlist.aspx
-- **Archive sessions**: https://archive.house.mo.gov/billlist.aspx
-- **Bill details**: https://archive.house.mo.gov/BillContent.aspx
-- **Co-sponsors**: https://archive.house.mo.gov/CoSponsors.aspx
-- **Bill actions**: https://archive.house.mo.gov/BillActions.aspx
-- **Bill hearings**: https://archive.house.mo.gov/BillHearings.aspx
 
 ## Contributing
 

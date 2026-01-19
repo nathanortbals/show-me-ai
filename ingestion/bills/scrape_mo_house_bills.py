@@ -4,12 +4,17 @@ Scrapes Missouri House of Representatives bills from the official website.
 """
 
 import asyncio
-import csv
+import os
 import re
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import httpx
 from playwright.async_api import async_playwright, Page, Browser
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class MoHouseBillScraper:
@@ -18,18 +23,31 @@ class MoHouseBillScraper:
     BASE_URL = "https://house.mo.gov/billlist.aspx"
     ARCHIVE_URL_TEMPLATE = "https://archive.house.mo.gov/billlist.aspx?year={year}&code={code}"
 
-    def __init__(self, year: Optional[int] = None, session_code: str = "R"):
+    def __init__(self, year: Optional[int] = None, session_code: str = "R", supabase_url: Optional[str] = None, supabase_key: Optional[str] = None):
         """
         Initialize the scraper.
 
         Args:
             year: Legislative year (None for current session)
             session_code: Session code (R for Regular, E for Extraordinary)
+            supabase_url: Supabase project URL (defaults to env var SUPABASE_URL)
+            supabase_key: Supabase API key (defaults to env var SUPABASE_KEY)
         """
         self.year = year
         self.session_code = session_code
         self.browser: Optional[Browser] = None
         self.page: Optional[Page] = None
+
+        # Initialize Supabase client if credentials provided
+        self.supabase: Optional[Client] = None
+        url = supabase_url or os.getenv('SUPABASE_URL')
+        key = supabase_key or os.getenv('SUPABASE_KEY')
+        if url and key:
+            self.supabase = create_client(url, key)
+
+        # Cache for session legislators to avoid duplicate lookups
+        self.session_legislator_cache: Dict[str, str] = {}  # Maps district -> session_legislator_id
+        self.session_id: Optional[str] = None  # Will be set when scraping starts
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -320,7 +338,7 @@ class MoHouseBillScraper:
         url = self._get_cosponsors_url(bill_number)
         await self.page.goto(url, wait_until="networkidle")
 
-        # Extract co-sponsors
+        # Extract co-sponsor names only (district column is not reliable)
         cosponsors = await self.page.evaluate("""
             () => {
                 const rows = Array.from(document.querySelectorAll('tr'));
@@ -452,6 +470,122 @@ class MoHouseBillScraper:
 
         return hearings
 
+    def _extract_district_from_sponsor(self, sponsor_text: str) -> Optional[str]:
+        """
+        Extract district number from sponsor text like "LastName, FirstName (151)".
+
+        Args:
+            sponsor_text: Raw sponsor text from bill list page
+
+        Returns:
+            District number as string, or None if not found
+        """
+        match = re.search(r'\((\d+)\)$', sponsor_text)
+        if match:
+            return match.group(1)
+        return None
+
+    async def get_or_create_session(self) -> str:
+        """
+        Get or create the session record for this scraper's year/session_code.
+
+        Returns:
+            The UUID of the session
+        """
+        if not self.supabase:
+            raise RuntimeError("Supabase client not initialized")
+
+        year = self.year or 2026  # Default to current year if not specified
+
+        # Try to find existing session
+        response = self.supabase.table('sessions').select('id').eq(
+            'year', year
+        ).eq(
+            'session_code', self.session_code
+        ).execute()
+
+        if response.data:
+            return response.data[0]['id']
+        else:
+            # Create new session
+            insert_response = self.supabase.table('sessions').insert({
+                'year': year,
+                'session_code': self.session_code
+            }).execute()
+            return insert_response.data[0]['id']
+
+    async def get_session_legislator_by_district(self, district: str) -> Optional[str]:
+        """
+        Look up a session_legislator in the database by district for the current session.
+
+        Args:
+            district: District number (e.g., "151")
+
+        Returns:
+            The session_legislator UUID if found, None otherwise
+        """
+        if not self.supabase or not self.session_id:
+            raise RuntimeError("Supabase client or session not initialized")
+
+        # Check cache first
+        cache_key = f"district:{district}"
+        if cache_key in self.session_legislator_cache:
+            return self.session_legislator_cache[cache_key]
+
+        # Search database for session_legislator by district
+        response = self.supabase.table('session_legislators').select('id').eq(
+            'session_id', self.session_id
+        ).eq(
+            'district', district
+        ).execute()
+
+        if response.data:
+            session_legislator_id = response.data[0]['id']
+            self.session_legislator_cache[cache_key] = session_legislator_id
+            return session_legislator_id
+
+        return None
+
+    async def get_session_legislator_by_name(self, name: str) -> Optional[str]:
+        """
+        Look up a session_legislator in the database by legislator name for the current session.
+
+        Args:
+            name: Legislator name
+
+        Returns:
+            The session_legislator UUID if found, None otherwise
+        """
+        if not self.supabase or not self.session_id:
+            raise RuntimeError("Supabase client or session not initialized")
+
+        # Check cache first
+        cache_key = f"name:{name}"
+        if cache_key in self.session_legislator_cache:
+            return self.session_legislator_cache[cache_key]
+
+        # First, find the legislator by name
+        leg_response = self.supabase.table('legislators').select('id').eq('name', name).execute()
+
+        if not leg_response.data:
+            return None
+
+        legislator_id = leg_response.data[0]['id']
+
+        # Then find the session_legislator record for this session and legislator
+        sl_response = self.supabase.table('session_legislators').select('id').eq(
+            'session_id', self.session_id
+        ).eq(
+            'legislator_id', legislator_id
+        ).execute()
+
+        if sl_response.data:
+            session_legislator_id = sl_response.data[0]['id']
+            self.session_legislator_cache[cache_key] = session_legislator_id
+            return session_legislator_id
+
+        return None
+
     async def download_bill_documents(self, bill_number: str, documents_string: str, output_dir: Path) -> List[str]:
         """
         Download bill document PDFs.
@@ -504,55 +638,198 @@ class MoHouseBillScraper:
 
         return downloaded_files
 
+    async def insert_bill_to_db(self, bill_data: Dict[str, Any]) -> tuple[str, bool]:
+        """
+        Insert or update a complete bill with all related data into the database.
 
-def save_to_csv(bills: List[Dict[str, str]], output_file: Path):
-    """
-    Save bills to a CSV file.
+        Args:
+            bill_data: Dictionary containing all bill information
 
-    Args:
-        bills: List of bill dictionaries
-        output_file: Path to output CSV file
-    """
-    if not bills:
-        print("No bills to save")
-        return
+        Returns:
+            Tuple of (bill_id, was_updated) where was_updated is True if bill was updated, False if inserted
+        """
+        if not self.supabase or not self.session_id:
+            raise RuntimeError("Supabase client or session not initialized")
 
-    fieldnames = list(bills[0].keys())
+        # Check if bill already exists
+        existing_bill = self.supabase.table('bills').select('id').eq(
+            'bill_number', bill_data['bill_number']
+        ).eq(
+            'session_id', self.session_id
+        ).execute()
 
-    with open(output_file, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(bills)
+        bill_record = {
+            'bill_number': bill_data['bill_number'],
+            'session_id': self.session_id,
+            'title': bill_data.get('title'),
+            'description': bill_data.get('description'),
+            'lr_number': bill_data.get('lr_number'),
+            'bill_string': bill_data.get('bill_string'),
+            'last_action': bill_data.get('last_action'),
+            'proposed_effective_date': bill_data.get('proposed_effective_date'),
+            'calendar_status': bill_data.get('calendar_status'),
+            'hearing_status': bill_data.get('hearing_status'),
+            'bill_url': bill_data.get('bill_url'),
+        }
 
-    print(f"Saved {len(bills)} bills to {output_file}")
+        if existing_bill.data:
+            # Update existing bill
+            bill_id = existing_bill.data[0]['id']
+            was_updated = True
+            self.supabase.table('bills').update(bill_record).eq('id', bill_id).execute()
+
+            # Delete existing related data to re-insert fresh data
+            self.supabase.table('bill_sponsors').delete().eq('bill_id', bill_id).execute()
+            self.supabase.table('bill_actions').delete().eq('bill_id', bill_id).execute()
+            self.supabase.table('bill_hearings').delete().eq('bill_id', bill_id).execute()
+            self.supabase.table('bill_documents').delete().eq('bill_id', bill_id).execute()
+        else:
+            # Insert new bill
+            was_updated = False
+            bill_response = self.supabase.table('bills').insert(bill_record).execute()
+            bill_id = bill_response.data[0]['id']
+
+        # Insert primary sponsor
+        if bill_data.get('sponsor'):
+            try:
+                # Extract district from sponsor text
+                district = self._extract_district_from_sponsor(bill_data['sponsor'])
+
+                if district:
+                    # Look up session_legislator by district
+                    session_legislator_id = await self.get_session_legislator_by_district(district)
+
+                    if session_legislator_id:
+                        self.supabase.table('bill_sponsors').insert({
+                            'bill_id': bill_id,
+                            'session_legislator_id': session_legislator_id,
+                            'is_primary': True
+                        }).execute()
+                    else:
+                        print(f"  Warning: Primary sponsor from district '{district}' not found in session_legislators")
+                else:
+                    print(f"  Warning: Could not extract district from primary sponsor: '{bill_data['sponsor']}'")
+            except Exception as e:
+                print(f"  Warning: Could not insert primary sponsor: {e}")
+
+        # Insert co-sponsors
+        if bill_data.get('cosponsors'):
+            cosponsors = bill_data['cosponsors'].split('; ')
+            for cosponsor_name in cosponsors:
+                if cosponsor_name.strip():
+                    try:
+                        # Look up session_legislator by name
+                        session_legislator_id = await self.get_session_legislator_by_name(cosponsor_name.strip())
+
+                        if session_legislator_id:
+                            self.supabase.table('bill_sponsors').insert({
+                                'bill_id': bill_id,
+                                'session_legislator_id': session_legislator_id,
+                                'is_primary': False
+                            }).execute()
+                        else:
+                            print(f"  Warning: Co-sponsor '{cosponsor_name}' not found in session_legislators")
+                    except Exception as e:
+                        print(f"  Warning: Could not insert co-sponsor {cosponsor_name}: {e}")
+
+        # Insert bill actions
+        if bill_data.get('actions'):
+            actions = bill_data['actions'].split(' || ')
+            for i, action_str in enumerate(actions):
+                parts = action_str.split(' | ')
+                if len(parts) == 2:
+                    try:
+                        self.supabase.table('bill_actions').insert({
+                            'bill_id': bill_id,
+                            'action_date': parts[0].strip(),
+                            'description': parts[1].strip(),
+                            'sequence_order': i
+                        }).execute()
+                    except Exception as e:
+                        print(f"  Warning: Could not insert action: {e}")
+
+        # Insert bill hearings
+        if bill_data.get('hearings'):
+            hearings = bill_data['hearings'].split(' || ')
+            for hearing_str in hearings:
+                parts = hearing_str.split(' | ')
+                if len(parts) == 4:
+                    try:
+                        committee_name = parts[0].strip()
+
+                        # Upsert committee
+                        committee_response = self.supabase.table('committees').select('id').eq(
+                            'name', committee_name
+                        ).execute()
+
+                        if committee_response.data:
+                            committee_id = committee_response.data[0]['id']
+                        else:
+                            committee_insert = self.supabase.table('committees').insert({
+                                'name': committee_name
+                            }).execute()
+                            committee_id = committee_insert.data[0]['id']
+
+                        self.supabase.table('bill_hearings').insert({
+                            'bill_id': bill_id,
+                            'committee_id': committee_id,
+                            'hearing_date': parts[1].strip() or None,
+                            'hearing_time': parts[2].strip() or None,
+                            'location': parts[3].strip()
+                        }).execute()
+                    except Exception as e:
+                        print(f"  Warning: Could not insert hearing: {e}")
+
+        # Insert bill documents
+        if bill_data.get('bill_documents'):
+            documents = bill_data['bill_documents'].split(' || ')
+            for doc_str in documents:
+                parts = doc_str.split(' | ')
+                if len(parts) == 2:
+                    try:
+                        self.supabase.table('bill_documents').insert({
+                            'bill_id': bill_id,
+                            'document_type': parts[0].strip(),
+                            'document_url': parts[1].strip(),
+                            'storage_path': None  # Will be updated when PDF is uploaded
+                        }).execute()
+                    except Exception as e:
+                        print(f"  Warning: Could not insert document: {e}")
+
+        return bill_id, was_updated
 
 
 async def main():
     """Main function to run the scraper."""
     import argparse
 
-    parser = argparse.ArgumentParser(description='Scrape Missouri House bills')
+    parser = argparse.ArgumentParser(description='Scrape Missouri House bills and insert into Supabase')
     parser.add_argument('--year', type=int, help='Legislative year (omit for current session)')
     parser.add_argument('--session-code', default='R', choices=['R', 'E'],
                         help='Session code: R=Regular, E=Extraordinary')
-    parser.add_argument('--output', type=str,
-                        help='Output CSV file (default: mo-house-bills-{year}.csv)')
     parser.add_argument('--limit', type=int,
                         help='Limit number of bills to scrape (useful for testing)')
     parser.add_argument('--pdf-dir', type=str, default='bill_pdfs',
                         help='Directory to save downloaded PDFs (default: bill_pdfs)')
+    parser.add_argument('--supabase-url', type=str,
+                        help='Supabase project URL (defaults to SUPABASE_URL env var)')
+    parser.add_argument('--supabase-key', type=str,
+                        help='Supabase API key (defaults to SUPABASE_KEY env var)')
 
     args = parser.parse_args()
 
-    # Determine output filename
-    if args.output:
-        output_file = Path(args.output)
-    else:
-        year_str = str(args.year) if args.year else 'current'
-        output_file = Path(f'mo-house-bills-{year_str}-{args.session_code}.csv')
-
     # Run scraper
-    async with MoHouseBillScraper(year=args.year, session_code=args.session_code) as scraper:
+    async with MoHouseBillScraper(
+        year=args.year,
+        session_code=args.session_code,
+        supabase_url=args.supabase_url,
+        supabase_key=args.supabase_key
+    ) as scraper:
+        # Get or create session
+        scraper.session_id = await scraper.get_or_create_session()
+        year = args.year or 2026
+        print(f"Using session: {year} {scraper.session_code} (ID: {scraper.session_id})\n")
+
         bills = await scraper.scrape_bills()
 
         if not bills:
@@ -599,7 +876,7 @@ async def main():
                     print(f"  Warning: Could not scrape hearings for {bill_number}: {e}")
                     details['hearings'] = ''
 
-                # Always download PDFs
+                # Always download PDFs (for now, even with database mode)
                 try:
                     pdf_dir = Path(args.pdf_dir)
                     downloaded = await scraper.download_bill_documents(
@@ -615,17 +892,23 @@ async def main():
                 # Merge basic info with detailed info
                 merged = {**bill, **details}
                 detailed_bills.append(merged)
+
+                # Insert to database
+                try:
+                    bill_id, was_updated = await scraper.insert_bill_to_db(merged)
+                    if was_updated:
+                        print(f"  ✓ Updated in database with ID: {bill_id}")
+                    else:
+                        print(f"  ✓ Inserted to database with ID: {bill_id}")
+                except Exception as e:
+                    print(f"  Error inserting/updating to database: {e}")
+
             except Exception as e:
                 print(f"  Error scraping {bill_number}: {e}")
                 # Keep the basic info even if detailed scraping fails
                 detailed_bills.append(bill)
 
-        bills = detailed_bills
-
-        if bills:
-            save_to_csv(bills, output_file)
-        else:
-            print("No bills to save!")
+        print(f"\n✓ Successfully processed {len(detailed_bills)} bills into database")
 
 
 if __name__ == '__main__':
