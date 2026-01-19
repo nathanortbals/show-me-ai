@@ -263,7 +263,7 @@ class Database:
             bill_record: Dictionary with bill fields (bill_number, title, description, etc.)
             sponsors_data: List of dicts with 'session_legislator_id' and 'is_primary'
             actions_data: List of dicts with 'action_date', 'description', 'sequence_order'
-            hearings_data: List of dicts with 'committee_name', 'hearing_date', 'hearing_time', 'location'
+            hearings_data: List of dicts with 'committee_name', 'hearing_date', 'hearing_time', 'hearing_time_text', 'location'
             documents_data: List of dicts with 'document_type', 'document_url', 'storage_path'
 
         Returns:
@@ -329,13 +329,19 @@ class Database:
                     # Get or create committee
                     committee_id = self.get_or_create_committee(hearing['committee_name'])
 
-                    self._client.table('bill_hearings').insert({
+                    hearing_record = {
                         'bill_id': bill_id,
                         'committee_id': committee_id,
                         'hearing_date': hearing.get('hearing_date'),
                         'hearing_time': hearing.get('hearing_time'),
                         'location': hearing.get('location')
-                    }).execute()
+                    }
+
+                    # Add hearing_time_text if provided (may not exist in older schema)
+                    if 'hearing_time_text' in hearing:
+                        hearing_record['hearing_time_text'] = hearing.get('hearing_time_text')
+
+                    self._client.table('bill_hearings').insert(hearing_record).execute()
                 except Exception as e:
                     print(f"  Warning: Could not insert hearing: {e}")
 

@@ -8,6 +8,7 @@ import re
 import sys
 from pathlib import Path
 from typing import List, Dict, Optional, Any
+from datetime import datetime
 import httpx
 from playwright.async_api import async_playwright, Page, Browser
 
@@ -21,6 +22,46 @@ class MoHouseBillScraper:
 
     BASE_URL = "https://house.mo.gov/billlist.aspx"
     ARCHIVE_URL_TEMPLATE = "https://archive.house.mo.gov/billlist.aspx?year={year}&code={code}"
+
+    @staticmethod
+    def _parse_hearing_time(time_str: str) -> Optional[str]:
+        """
+        Extract a valid time from hearing time string.
+
+        Examples:
+            "4:30 PM" -> "16:30:00"
+            "Upon Adjournment" -> None
+            "4:30 PM or upon adjournment" -> "16:30:00"
+            "Immediately upon adjournment" -> None
+
+        Args:
+            time_str: Raw hearing time string
+
+        Returns:
+            Time in HH:MM:SS format, or None if no parseable time found
+        """
+        if not time_str:
+            return None
+
+        # Try to find time patterns like "4:30 PM", "2:00 PM", etc.
+        time_pattern = r'(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)'
+        match = re.search(time_pattern, time_str)
+
+        if match:
+            hour = int(match.group(1))
+            minute = int(match.group(2))
+            period = match.group(3).upper()
+
+            # Convert to 24-hour format
+            if period == 'PM' and hour != 12:
+                hour += 12
+            elif period == 'AM' and hour == 12:
+                hour = 0
+
+            return f"{hour:02d}:{minute:02d}:00"
+
+        # No valid time found
+        return None
 
     def __init__(self, year: Optional[int] = None, session_code: str = "R", db: Optional[Database] = None):
         """
@@ -701,10 +742,12 @@ class MoHouseBillScraper:
             for hearing_str in hearings:
                 parts = hearing_str.split(' | ')
                 if len(parts) == 4:
+                    time_text = parts[2].strip()
                     hearings_data.append({
                         'committee_name': parts[0].strip(),
                         'hearing_date': parts[1].strip() or None,
-                        'hearing_time': parts[2].strip() or None,
+                        'hearing_time': self._parse_hearing_time(time_text),  # Parsed time
+                        'hearing_time_text': time_text or None,  # Original text
                         'location': parts[3].strip()
                     })
 
