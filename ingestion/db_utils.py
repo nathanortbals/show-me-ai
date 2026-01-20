@@ -36,6 +36,19 @@ class Database:
 
         self._client: Client = create_client(url, key)
 
+    @property
+    def client(self) -> Client:
+        """
+        Get the Supabase client for direct access.
+
+        This property is provided for integrations that require direct client access,
+        such as LangChain's SupabaseVectorStore.
+
+        Returns:
+            Supabase client instance
+        """
+        return self._client
+
     def get_or_create_session(self, year: int, session_code: str) -> str:
         """
         Get or create a session record.
@@ -359,3 +372,206 @@ class Database:
                     print(f"  Warning: Could not insert document: {e}")
 
         return bill_id, was_updated
+
+    def get_bills_for_session(self, session_id: str, limit: Optional[int] = None) -> list[Dict[str, Any]]:
+        """
+        Get all bills for a specific session.
+
+        Args:
+            session_id: Session UUID
+            limit: Optional limit on number of bills to return
+
+        Returns:
+            List of bill records with id and bill_number
+        """
+        query = self._client.table('bills').select('id, bill_number').eq('session_id', session_id)
+
+        if limit:
+            query = query.limit(limit)
+
+        response = query.execute()
+        return response.data if response.data else []
+
+    def get_bill_documents(self, bill_id: str) -> list[Dict[str, Any]]:
+        """
+        Get all documents for a specific bill.
+
+        Args:
+            bill_id: Bill UUID
+
+        Returns:
+            List of document records
+        """
+        response = self._client.table('bill_documents').select('*').eq('bill_id', bill_id).execute()
+        return response.data if response.data else []
+
+    def get_embeddable_bill_documents(self, bill_id: str) -> list[Dict[str, Any]]:
+        """
+        Get documents that should be embedded for a bill.
+
+        Returns "Introduced" version and the most recent version (if different).
+        Excludes fiscal notes (*.ORG.pdf files).
+
+        Document hierarchy (most to least recent):
+        1. Truly Agreed (final version)
+        2. Senate Committee Substitute
+        3. Perfected (passed House)
+        4. Committee (with amendments)
+        5. Introduced (original)
+
+        Args:
+            bill_id: Bill UUID
+
+        Returns:
+            List of 1-2 document records to embed
+        """
+        all_docs = self.get_bill_documents(bill_id)
+
+        # Filter out fiscal notes (contain .ORG in storage path or document type)
+        legislative_docs = [
+            doc for doc in all_docs
+            if doc.get('storage_path') and '.ORG' not in doc.get('storage_path', '')
+        ]
+
+        if not legislative_docs:
+            return []
+
+        # Document type hierarchy for determining most recent
+        hierarchy = [
+            'truly agreed',
+            'truly_agreed',
+            'senate_comm_sub',
+            'senate comm sub',
+            'senate committee substitute',
+            'perfected',
+            'committee',
+            'introduced'
+        ]
+
+        # Find introduced version
+        introduced = None
+        for doc in legislative_docs:
+            doc_type_lower = doc.get('document_type', '').lower()
+            if 'introduced' in doc_type_lower:
+                introduced = doc
+                break
+
+        # Find most recent version based on hierarchy
+        most_recent = None
+        for priority_type in hierarchy:
+            for doc in legislative_docs:
+                doc_type_lower = doc.get('document_type', '').lower().replace(' ', '_')
+                if priority_type in doc_type_lower:
+                    most_recent = doc
+                    break
+            if most_recent:
+                break
+
+        # Return introduced + most recent (deduplicated)
+        result = []
+        if introduced:
+            result.append(introduced)
+        if most_recent and most_recent != introduced:
+            result.append(most_recent)
+
+        # If we didn't find either, return the first legislative doc
+        if not result and legislative_docs:
+            result.append(legislative_docs[0])
+
+        return result
+
+    def get_bill_metadata_for_embeddings(self, bill_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get bill metadata for embedding generation.
+
+        Fetches bill info, session, sponsors, and committees.
+
+        Args:
+            bill_id: Bill UUID
+
+        Returns:
+            Dictionary with metadata or None if bill not found
+        """
+        # Get bill with session info
+        bill_response = self._client.table('bills').select(
+            'id, bill_number, session_id, sessions(year, session_code)'
+        ).eq('id', bill_id).execute()
+
+        if not bill_response.data:
+            return None
+
+        bill = bill_response.data[0]
+
+        # Get primary sponsor
+        primary_sponsor = None
+        sponsors_response = self._client.table('bill_sponsors').select(
+            'is_primary, session_legislators(id, legislators(id, name))'
+        ).eq('bill_id', bill_id).eq('is_primary', True).execute()
+
+        if sponsors_response.data and sponsors_response.data[0].get('session_legislators'):
+            sl = sponsors_response.data[0]['session_legislators']
+            if sl and sl.get('legislators'):
+                leg = sl['legislators']
+                primary_sponsor = {
+                    'id': leg['id'],
+                    'name': leg['name']
+                }
+
+        # Get co-sponsors
+        cosponsors = []
+        cosponsors_response = self._client.table('bill_sponsors').select(
+            'is_primary, session_legislators(id, legislators(id, name))'
+        ).eq('bill_id', bill_id).eq('is_primary', False).execute()
+
+        if cosponsors_response.data:
+            for sponsor in cosponsors_response.data:
+                sl = sponsor.get('session_legislators')
+                if sl and sl.get('legislators'):
+                    leg = sl['legislators']
+                    cosponsors.append({
+                        'id': leg['id'],
+                        'name': leg['name']
+                    })
+
+        # Get committees from hearings
+        committees = []
+        committees_response = self._client.table('bill_hearings').select(
+            'committees(id, name)'
+        ).eq('bill_id', bill_id).execute()
+
+        if committees_response.data:
+            seen_committee_ids = set()
+            for hearing in committees_response.data:
+                comm = hearing.get('committees')
+                if comm and comm['id'] not in seen_committee_ids:
+                    committees.append({
+                        'id': comm['id'],
+                        'name': comm['name']
+                    })
+                    seen_committee_ids.add(comm['id'])
+
+        return {
+            'bill_id': bill['id'],
+            'bill_number': bill['bill_number'],
+            'session_year': bill['sessions']['year'] if bill.get('sessions') else None,
+            'session_code': bill['sessions']['session_code'] if bill.get('sessions') else None,
+            'primary_sponsor': primary_sponsor,
+            'cosponsors': cosponsors,
+            'committees': committees
+        }
+
+    def download_from_storage(self, storage_path: str, bucket_name: str = 'bill-pdfs') -> bytes:
+        """
+        Download a file from Supabase Storage.
+
+        Args:
+            storage_path: Path within bucket
+            bucket_name: Storage bucket name (default: 'bill-pdfs')
+
+        Returns:
+            File content as bytes
+
+        Raises:
+            Exception: If download fails
+        """
+        return self._client.storage.from_(bucket_name).download(storage_path)

@@ -8,6 +8,11 @@ dependencies = [
     "playwright>=1.40.0",
     "python-dotenv>=1.2.1",
     "supabase>=2.27.2",
+    "langchain>=0.3.17",
+    "langchain-openai>=0.3.2",
+    "langchain-community>=0.3.17",
+    "pypdf>=5.1.0",
+    "tiktoken>=0.8.0",
 ]
 
 [project.scripts]
