@@ -24,7 +24,12 @@ This project aims to make Missouri legislative information accessible and querya
 - ✅ Rich metadata (session, sponsors, co-sponsors, committees)
 - ✅ Vector storage with pgvector and similarity search function
 
-🟡 **Phase 3: AI Agent Development** (In Progress)
+🟢 **Phase 3: AI Agent Development** (Complete)
+
+- ✅ LangGraph agent with 6 specialized tools
+- ✅ Semantic search using vector embeddings
+- ✅ Bill lookup, timeline, and hearing queries
+- ✅ LangGraph Studio integration
 
 ## Architecture (Planned)
 
@@ -58,9 +63,10 @@ This project aims to make Missouri legislative information accessible and querya
 - **Playwright** - Web scraping and automation
 - **UV** - Fast Python package management
 - **Supabase** - PostgreSQL database with pgvector extension
+- **LangGraph/LangChain** - AI agent orchestration with RAG
+- **OpenAI** - Embeddings (text-embedding-3-small) and LLM (GPT-4o)
 
 **Planned:**
-- **LangGraph/LangChain** - AI agent orchestration
 - **FastAPI** - REST API backend
 - **React** - Frontend user interface
 
@@ -79,10 +85,10 @@ This project aims to make Missouri legislative information accessible and querya
   - [x] Implement smart chunking strategies
   - [x] Add comprehensive metadata to embeddings
 
-- [ ] **Phase 3: AI Agent Development**
-  - [ ] Build LangChain/LangGraph agent
-  - [ ] Implement RAG pipeline
-  - [ ] Create tools for querying bill data
+- [x] **Phase 3: AI Agent Development**
+  - [x] Build LangChain/LangGraph agent
+  - [x] Implement RAG pipeline
+  - [x] Create tools for querying bill data
 
 - [ ] **Phase 4: API Backend**
   - [ ] Build FastAPI application
@@ -172,12 +178,49 @@ The pipeline will:
 - Generate embeddings via OpenAI text-embedding-3-small
 - Store with comprehensive metadata (sponsors, committees, session info)
 
+#### Using the AI Agent
+
+After generating embeddings, you can query bills using the AI agent in two ways:
+
+**Option 1: LangGraph Studio (Recommended)**
+
+1. Install [LangGraph Studio](https://github.com/langchain-ai/langgraph-studio)
+
+2. Open the `mo-bills` directory in LangGraph Studio
+
+3. The agent will be automatically loaded from `langgraph.json`
+
+4. Start asking questions in the Studio UI:
+   - "What bills are about healthcare in 2026?"
+   - "Tell me about HB 1366"
+   - "Show me the timeline for HB 2146"
+   - "What bills did Rep. Smith sponsor?"
+
+**Option 2: Command Line**
+
+Run the agent directly from the command line:
+
+```bash
+uv run python -m agent.graph "What bills are about education funding?"
+```
+
+**Available Agent Tools:**
+- `search_bills_semantic` - Find bills by topic using vector search
+- `get_bill_by_number` - Get detailed information about a specific bill
+- `get_legislator_info` - Look up legislator details
+- `get_bill_timeline` - View legislative history and actions
+- `get_committee_hearings` - Find hearing information
+- `search_bills_by_year` - Search bills by session year
+
+For detailed agent documentation, see [agent/README.md](agent/README.md)
+
 For detailed usage instructions and options, see:
 - [Legislator Scraper Documentation](ingestion/legislators/README.md)
 - [Bill Scraper Documentation](ingestion/bills/README.md)
 
 ## Documentation
 
+- **[AI Agent](agent/README.md)** - Agent capabilities, tools, and usage examples
 - **[Database Schema](DATABASE_SCHEMA.md)** - Complete schema documentation with table definitions, relationships, and example queries
 - **[Legislator Scraper](ingestion/legislators/README.md)** - Scraper usage, options, and data sources
 - **[Bill Scraper](ingestion/bills/README.md)** - Scraper usage, options, and data sources
@@ -186,6 +229,10 @@ For detailed usage instructions and options, see:
 
 ```
 mo-bills/
+├── agent/
+│   ├── graph.py                    # LangGraph agent implementation
+│   ├── tools.py                    # Agent tools (search, lookup, etc.)
+│   └── README.md                   # Agent documentation
 ├── ingestion/
 │   ├── bills/                      # Bill scraper
 │   ├── legislators/                # Legislator scraper
@@ -197,6 +244,7 @@ mo-bills/
 ├── database/
 │   └── migrations/                 # Database migrations
 ├── bill_pdfs/                      # Downloaded PDFs (gitignored)
+├── langgraph.json                  # LangGraph Studio configuration
 ├── DATABASE_SCHEMA.md              # Database documentation
 ├── pyproject.toml                  # Project dependencies
 ├── .env                            # Credentials (gitignored)
