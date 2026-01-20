@@ -161,7 +161,9 @@ This will process sessions from 2026 back to 2000. The script is idempotent and 
 
 **Step 3: Generate Embeddings**
 
-After scraping bills, generate vector embeddings for semantic search:
+After scraping bills, generate vector embeddings for semantic search.
+
+For a single session:
 ```bash
 uv run python -m ingestion.embeddings.embeddings_pipeline --year 2026 --session-code R
 ```
@@ -170,6 +172,11 @@ Options:
 - `--year`: Legislative year (required)
 - `--session-code`: Session code - R (Regular), S1 (First Special), S2 (Second Special)
 - `--limit`: Optional limit on number of bills to process
+
+For all sessions at once:
+```bash
+uv run python ingestion/generate_all_embeddings.py
+```
 
 The pipeline will:
 - Extract text from bill PDFs in Supabase Storage
@@ -250,6 +257,7 @@ mo-bills/
 │   │   ├── chunking.py             # Text chunking strategies
 │   │   └── embeddings_pipeline.py  # Main embeddings pipeline
 │   ├── scrape_all_sessions.py      # Batch scraper for all sessions
+│   ├── generate_all_embeddings.py  # Batch embeddings generator
 │   └── db_utils.py                 # Shared database utilities
 ├── database/
 │   └── migrations/                 # Database migrations
