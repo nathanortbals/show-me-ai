@@ -16,11 +16,15 @@ def clean_legislative_text(text: str) -> str:
     Clean legislative document formatting artifacts.
 
     Removes:
+    - Null bytes (Unicode \u0000 characters that break PostgreSQL)
     - Line numbers at the start of lines (e.g., "2 ", "3 ", "10 ")
     - Page headers (e.g., "SCS HCS HBs 1366 & 1878 2")
     - Hyphenated line breaks (e.g., "pharma-\ncist" → "pharmacist")
     - Excessive whitespace
     """
+    # Remove null bytes (causes PostgreSQL errors)
+    text = text.replace('\x00', '')
+
     # Fix hyphenated words split across lines
     text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
 

@@ -3,6 +3,7 @@ Tools for the Missouri Bills AI agent.
 
 Provides functions for semantic search, bill lookup, and metadata queries.
 """
+import re
 from typing import Optional, List, Dict, Any
 from langchain_core.tools import tool
 from langchain_openai import OpenAIEmbeddings
@@ -107,8 +108,10 @@ def get_bill_by_number(bill_number: str, session_year: Optional[int] = None) -> 
     """
     db = _get_db()
 
-    # Clean bill number
-    bill_number = bill_number.replace(" ", "").upper()
+    # Normalize bill number - ensure space between prefix and number
+    # e.g., "HB1366" -> "HB 1366", "HB 1366" -> "HB 1366"
+    bill_number = bill_number.upper().strip()
+    bill_number = re.sub(r'^([A-Z]+)(\d+)$', r'\1 \2', bill_number)
 
     # Build query
     query = db._client.table('bills').select(
@@ -240,8 +243,9 @@ def get_bill_timeline(bill_number: str, session_year: Optional[int] = None) -> s
     """
     db = _get_db()
 
-    # Clean bill number
-    bill_number = bill_number.replace(" ", "").upper()
+    # Normalize bill number - ensure space between prefix and number
+    bill_number = bill_number.upper().strip()
+    bill_number = re.sub(r'^([A-Z]+)(\d+)$', r'\1 \2', bill_number)
 
     # Get bill ID
     query = db._client.table('bills').select('id, bill_number, sessions(year, session_code)').eq(
@@ -308,7 +312,9 @@ def get_committee_hearings(bill_number: Optional[str] = None, committee_name: Op
     )
 
     if bill_number:
-        bill_number = bill_number.replace(" ", "").upper()
+        # Normalize bill number - ensure space between prefix and number
+        bill_number = bill_number.upper().strip()
+        bill_number = re.sub(r'^([A-Z]+)(\d+)$', r'\1 \2', bill_number)
         # Get bill ID first
         bill_response = db._client.table('bills').select('id').eq('bill_number', bill_number).execute()
         if not bill_response.data:
