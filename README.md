@@ -186,14 +186,14 @@ After generating embeddings, you can query bills using the AI agent in two ways:
 
 LangGraph Studio provides an interactive web UI for testing and debugging your agent. To use it:
 
-1. Install the LangGraph CLI:
+1. Install dev dependencies (includes LangGraph CLI):
    ```bash
-   pip install --upgrade "langgraph-cli[inmem]"
+   uv sync --group dev
    ```
 
 2. Start the development server from the project directory:
    ```bash
-   langgraph dev
+   uv run langgraph dev
    ```
 
 3. Open the Studio UI at: `https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024`

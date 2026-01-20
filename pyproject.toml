@@ -27,4 +27,6 @@ build-backend = "hatchling.build"
 packages = ["ingestion"]
 
 [dependency-groups]
-dev = []
+dev = [
+    "langgraph-cli[inmem]>=0.1.58",
+]
