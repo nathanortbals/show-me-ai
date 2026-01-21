@@ -1,12 +1,8 @@
-import { streamText, createOpenAI } from 'ai';
 import { getAgent } from '@/agent/graph';
 import { HumanMessage } from '@langchain/core/messages';
+import { LangChainAdapter } from 'ai';
 
 export const maxDuration = 30;
-
-const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export async function POST(req: Request) {
   try {
@@ -19,35 +15,53 @@ export async function POST(req: Request) {
       return new Response('No message provided', { status: 400 });
     }
 
-    // Run the agent (synchronous for now, will stream the final response)
+    // Get agent and stream response
     const agent = getAgent();
-    const result = await agent.invoke({
+
+    // Stream the agent's response
+    const stream = await agent.stream({
       messages: [new HumanMessage(userMessage)],
     });
 
-    const finalMessage = result.messages[result.messages.length - 1];
-    const responseText = typeof finalMessage.content === 'string'
-      ? finalMessage.content
-      : JSON.stringify(finalMessage.content);
+    // Convert LangChain stream to Vercel AI SDK format
+    const encoder = new TextEncoder();
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of stream) {
+            // Extract messages from each chunk
+            const messages = chunk.messages || [];
+            if (messages.length > 0) {
+              const lastMessage = messages[messages.length - 1];
 
-    // Stream the response using Vercel AI SDK
-    const stream = streamText({
-      model: openai('gpt-4o'),
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a helpful assistant that formats and presents information about Missouri House bills. Present the information that was gathered clearly and concisely.',
-        },
-        {
-          role: 'user',
-          content: `Here is the information gathered: ${responseText}\n\nPlease format this information in a clear, user-friendly way.`,
-        },
-      ],
+              // Stream content tokens
+              if (lastMessage.content) {
+                const content = typeof lastMessage.content === 'string'
+                  ? lastMessage.content
+                  : JSON.stringify(lastMessage.content);
+
+                // Send as SSE format for AI SDK compatibility
+                const data = `0:${JSON.stringify(content)}\n`;
+                controller.enqueue(encoder.encode(data));
+              }
+            }
+          }
+          controller.close();
+        } catch (error) {
+          console.error('Stream error:', error);
+          controller.error(error);
+        }
+      },
     });
 
-    return stream.toTextStreamResponse();
+    return new Response(readableStream, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'X-Vercel-AI-Data-Stream': 'v1',
+      },
+    });
   } catch (error) {
-    console.error('Stream error:', error);
+    console.error('Agent error:', error);
     return new Response('Internal server error', { status: 500 });
   }
 }
