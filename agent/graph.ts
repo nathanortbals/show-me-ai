@@ -43,14 +43,16 @@ const agent = createAgent({
   checkpointer,
 });
 
-// Export the agent as default for LangGraph Studio
-export default agent;
+// Export the compiled graph for LangGraph Studio
+// createAgent returns a ReactAgent with a .graph property containing the CompiledStateGraph
+export default agent.graph;
 
 // Also export named for backward compatibility
-export { agent as graph };
+export const graph = agent.graph;
 
 /**
- * Singleton getter for the agent
+ * Get the agent instance (returns the ReactAgent, not just the graph)
+ * Use this for API routes that need to call .invoke() or .stream()
  */
 export function getAgent() {
   return agent;
