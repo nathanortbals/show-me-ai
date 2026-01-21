@@ -1,75 +1,67 @@
 /**
  * LangGraph agent for Missouri Bills queries.
  *
- * Implements a simple ReAct-style agent with tool calling.
+ * Uses LangChain's createAgent helper for simplified agent creation.
  */
 
-import { StateGraph, END, MessagesAnnotation, MemorySaver } from '@langchain/langgraph';
-import { ToolNode } from '@langchain/langgraph/prebuilt';
-import { ChatOpenAI } from '@langchain/openai';
-import { HumanMessage, BaseMessage } from '@langchain/core/messages';
+import { createAgent } from 'langchain';
+import { MemorySaver } from '@langchain/langgraph';
 import { getTools } from './tools';
 
 /**
- * Create the Missouri Bills LangGraph agent
+ * System prompt for the Missouri Bills agent
  */
-export function createAgent() {
-  // Initialize LLM with tools
-  const tools = getTools();
-  const llm = new ChatOpenAI({
-    model: 'gpt-4o',
-    temperature: 0,
-  });
-  const llmWithTools = llm.bindTools(tools);
+const systemPrompt = `You are an expert assistant for querying Missouri House of Representatives bills and legislation.
 
-  // Define agent node
-  async function callModel(state: typeof MessagesAnnotation.State) {
-    const response = await llmWithTools.invoke(state.messages);
-    return { messages: [response] };
-  }
+You have access to specialized tools for:
+- Searching bills by topic using semantic search
+- Getting detailed bill information by bill number
+- Looking up legislator information
+- Viewing bill timelines and legislative actions
+- Finding committee hearing information
+- Searching bills by session year
 
-  // Define conditional edge function
-  function shouldContinue(state: typeof MessagesAnnotation.State) {
-    const messages = state.messages as BaseMessage[];
-    const lastMessage = messages[messages.length - 1];
+When users ask about bills:
+1. Use semantic search for topic-based queries
+2. Look up specific bill numbers when provided
+3. Get legislator information when asked about sponsors
+4. Show timelines for bill progress questions
+5. Find hearings for committee schedule questions
 
-    // If there are no tool calls, end
-    if (!('tool_calls' in lastMessage) || !lastMessage.tool_calls?.length) {
-      return 'end';
-    }
+Always provide clear, accurate information based on the data retrieved from your tools.
+Be concise but comprehensive in your responses.`;
 
-    // Otherwise continue with tools
-    return 'continue';
-  }
+/**
+ * Create the Missouri Bills agent using LangChain's createAgent helper
+ */
+const checkpointer = new MemorySaver();
 
-  // Create graph
-  const workflow = new StateGraph(MessagesAnnotation)
-    // Add nodes
-    .addNode('agent', callModel)
-    .addNode('tools', new ToolNode(tools))
-    // Set entry point
-    .addEdge('__start__', 'agent')
-    // Add conditional edges
-    .addConditionalEdges('agent', shouldContinue, {
-      continue: 'tools',
-      end: END,
-    })
-    .addEdge('tools', 'agent');
+const agent = createAgent({
+  model: 'gpt-4o',
+  systemPrompt,
+  tools: getTools(),
+  checkpointer,
+});
 
-  // Compile graph with memory saver for LangGraph Studio
-  const checkpointer = new MemorySaver();
-  return workflow.compile({ checkpointer });
+// Export the agent as default for LangGraph Studio
+export default agent;
+
+// Also export named for backward compatibility
+export { agent as graph };
+
+/**
+ * Singleton getter for the agent
+ */
+export function getAgent() {
+  return agent;
 }
 
 /**
- * Run the agent with a user query
+ * Run the agent with a user query (backward compatibility)
  */
 export async function runAgent(query: string) {
-  const agent = createAgent();
-
-  // Run agent
   const result = await agent.invoke({
-    messages: [new HumanMessage(query)],
+    messages: [{ role: 'user', content: query }],
   });
 
   // Extract final response
@@ -78,19 +70,3 @@ export async function runAgent(query: string) {
 
   return finalMessage.content;
 }
-
-// Singleton agent instance for reuse
-let agentInstance: ReturnType<typeof createAgent> | null = null;
-
-export function getAgent() {
-  if (!agentInstance) {
-    agentInstance = createAgent();
-  }
-  return agentInstance;
-}
-
-// Export compiled graph for LangGraph Studio
-// Use default export so Studio can easily discover it
-const graph = createAgent();
-export default graph;
-export { graph };
