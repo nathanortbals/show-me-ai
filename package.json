@@ -1,21 +1,33 @@
 {
-  "name": "app",
+  "name": "mo-bills",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "types:db": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > database/types.ts",
+    "ingest": "tsx ingestion/cli.ts",
+    "ingest:legislators": "tsx ingestion/cli.ts scrape-legislators",
+    "ingest:bills": "tsx ingestion/cli.ts scrape-bills",
+    "ingest:embeddings": "tsx ingestion/cli.ts generate-embeddings",
+    "ingest:all": "tsx ingestion/cli.ts scrape-all"
   },
   "dependencies": {
+    "@langchain/community": "^0.3.17",
     "@langchain/core": "^1.1.16",
     "@langchain/langgraph": "^1.1.1",
     "@langchain/openai": "^1.2.3",
     "@supabase/supabase-js": "^2.91.0",
     "ai": "^6.0.42",
+    "axios": "^1.6.0",
+    "commander": "^11.1.0",
     "dotenv": "^17.2.3",
+    "js-tiktoken": "^1.0.7",
     "next": "16.1.4",
+    "pdf-parse": "^1.1.4",
+    "playwright": "^1.40.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "zod": "^4.3.5"
@@ -23,11 +35,14 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.4",
+    "supabase": "^1.200.0",
     "tailwindcss": "^4",
+    "tsx": "^4.7.0",
     "typescript": "^5"
   }
 }

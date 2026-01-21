@@ -7,7 +7,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { OpenAIEmbeddings } from '@langchain/openai';
-import { getSupabaseClient } from '../db';
+import { getSupabaseClient } from '@/ingestion/database/client';
 
 // Normalize bill number to match database format (e.g., "HB1366" -> "HB 1366")
 function normalizeBillNumber(billNumber: string): string {
