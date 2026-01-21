@@ -174,6 +174,58 @@ curl -X POST http://localhost:3000/api/chat \
   -d '{"message": "What bills are about education funding?"}'
 ```
 
+#### Running the Agent in LangGraph Studio
+
+LangGraph Studio provides a visual interface for debugging and testing your agent with real-time visualization of the agent's decision-making process.
+
+**Prerequisites:**
+- [LangGraph Studio Desktop App](https://github.com/langchain-ai/langgraph-studio) or LangGraph CLI
+- Environment variables configured in `.env.local`
+
+**Setup:**
+
+1. Create a `langgraph.json` configuration file in the root directory:
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./agent/graph.ts:createAgent"
+  },
+  "env": ".env.local"
+}
+```
+
+2. Install LangGraph Studio Desktop or CLI:
+```bash
+# Desktop App (recommended)
+# Download from: https://github.com/langchain-ai/langgraph-studio/releases
+
+# OR CLI
+npm install -g @langchain/langgraph-cli
+```
+
+3. Open the project in LangGraph Studio:
+```bash
+# Using Desktop App: File -> Open Project -> select mo-bills directory
+
+# Using CLI:
+langgraph dev
+```
+
+4. In the Studio interface:
+   - Select the "agent" graph
+   - Enter a test query like "What bills are about healthcare?"
+   - Watch the agent execution flow in real-time
+   - Inspect tool calls, messages, and state transitions
+   - Debug with breakpoints and step-through execution
+
+**Benefits of LangGraph Studio:**
+- Visual graph representation of your agent
+- Real-time execution tracing
+- Tool call inspection
+- State debugging
+- Performance profiling
+
 #### Data Ingestion
 
 ##### Single Session
