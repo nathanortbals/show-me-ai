@@ -87,3 +87,6 @@ export function getAgent() {
   }
   return agentInstance;
 }
+
+// Export compiled graph for LangGraph Studio
+export const graph = createAgent();
