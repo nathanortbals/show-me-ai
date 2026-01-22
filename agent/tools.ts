@@ -129,19 +129,26 @@ export const searchBillsSemantic = tool(
     };
 
     try {
-      // Perform similarity search with score
-      const results = await vectorStore.similaritySearchWithScore(
+      // Search with a higher limit to get total count of available results
+      // This helps inform the user if there are more results than shown
+      const searchLimit = Math.max(limit * 3, 50);
+      const allResults = await vectorStore.similaritySearchWithScore(
         query,
-        limit,
+        searchLimit,
         filter
       );
 
-      if (results.length === 0) {
+      if (allResults.length === 0) {
         return 'No bills found matching that query with the given filters.';
       }
 
+      // Only format the requested limit
+      const resultsToShow = allResults.slice(0, limit);
+      const totalCount = allResults.length;
+      const hasMore = totalCount > limit;
+
       // Format results
-      const formattedResults = results.map(([doc, score]) => {
+      const formattedResults = resultsToShow.map(([doc, score]) => {
         const meta = (doc.metadata || {}) as BillEmbeddingMatch['metadata'];
         const content = doc.pageContent || '';
 
@@ -167,7 +174,12 @@ Content: ${content.substring(0, 300)}...
 ---`;
       });
 
-      return formattedResults.join('\n\n');
+      // Add summary header with total count
+      const header = hasMore
+        ? `Found ${totalCount} matching results. Showing top ${limit}:\n\n`
+        : `Found ${totalCount} matching result${totalCount === 1 ? '' : 's'}:\n\n`;
+
+      return header + formattedResults.join('\n\n');
     } catch (error) {
       console.error('Semantic search error:', error);
       return 'Error searching bills. Please try again.';
