@@ -15,6 +15,7 @@ import {
   HearingData,
   DocumentData,
 } from '@/ingestion/database/client';
+import { Database } from '@/database/types';
 
 /**
  * Bill list item from the bill list page
@@ -707,7 +708,7 @@ export class MoHouseBillScraper {
     }
 
     // Prepare bill record
-    const billRecord: any = {
+    const billRecord: Database['public']['Tables']['bills']['Insert'] = {
       bill_number: billData.bill_number,
       title: billData.title,
       description: billData.description,

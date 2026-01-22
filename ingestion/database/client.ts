@@ -11,99 +11,53 @@ import { Database } from '@/database/types';
 // Type aliases for convenience
 type Session = Database['public']['Tables']['sessions']['Row'];
 type Bill = Database['public']['Tables']['bills']['Row'];
+type BillInsert = Database['public']['Tables']['bills']['Insert'];
 type BillDocument = Database['public']['Tables']['bill_documents']['Row'];
 type Legislator = Database['public']['Tables']['legislators']['Row'];
 type Committee = Database['public']['Tables']['committees']['Row'];
 
 /**
- * Legislator data for upsert operations
+ * Legislator data for upsert operations (without auto-generated fields)
  */
-export interface LegislatorData {
-  name: string;
-  legislator_type?: string;
-  party_affiliation?: string;
-  year_elected?: number;
-  years_served?: number;
-  picture_url?: string;
-  is_active?: boolean;
-  profile_url?: string;
-}
+export type LegislatorData = Omit<
+  Database['public']['Tables']['legislators']['Insert'],
+  'id' | 'created_at' | 'updated_at'
+>;
 
 /**
- * Bill record data
+ * Sponsor data for bill insertion (without bill_id, added during insertion)
  */
-export interface BillRecord {
-  bill_number: string;
-  title?: string;
-  description?: string;
-  lr_number?: string;
-  sponsor_name?: string;
-  effective_date?: string;
-  status?: string;
-  last_action_date?: string;
-  last_action_description?: string;
-  bill_url?: string;
-  [key: string]: any; // Allow additional fields
-}
+export type SponsorData = Omit<
+  Database['public']['Tables']['bill_sponsors']['Insert'],
+  'bill_id' | 'id' | 'created_at'
+>;
 
 /**
- * Sponsor data for bill insertion
+ * Action data for bill insertion (without bill_id, added during insertion)
  */
-export interface SponsorData {
-  session_legislator_id: string;
-  is_primary: boolean;
-}
+export type ActionData = Omit<
+  Database['public']['Tables']['bill_actions']['Insert'],
+  'bill_id' | 'id' | 'created_at'
+>;
 
 /**
- * Action data for bill insertion
+ * Hearing data for bill insertion (uses committee_name for convenience, resolved to committee_id internally)
+ * This is a convenience wrapper - the scraper provides committee_name which upsertBill resolves to committee_id
  */
-export interface ActionData {
-  action_date: string;
-  description: string;
-  sequence_order?: number;
-}
+export type HearingData = Omit<
+  Database['public']['Tables']['bill_hearings']['Insert'],
+  'bill_id' | 'committee_id' | 'id' | 'created_at'
+> & {
+  committee_name: string; // Resolved to committee_id during insertion
+};
 
 /**
- * Hearing data for bill insertion
+ * Document data for bill insertion (without bill_id, added during insertion)
  */
-export interface HearingData {
-  committee_name: string;
-  hearing_date?: string;
-  hearing_time?: string;
-  hearing_time_text?: string;
-  location?: string;
-}
-
-/**
- * Document data for bill insertion
- */
-export interface DocumentData {
-  document_type: string;
-  document_url: string;
-  storage_path?: string;
-}
-
-/**
- * Bill metadata for embeddings generation
- */
-export interface BillMetadata {
-  bill_id: string;
-  bill_number: string;
-  session_year: number;
-  session_code: string;
-  primary_sponsor: {
-    id: string;
-    name: string;
-  } | null;
-  cosponsors: Array<{
-    id: string;
-    name: string;
-  }>;
-  committees: Array<{
-    id: string;
-    name: string;
-  }>;
-}
+export type DocumentData = Omit<
+  Database['public']['Tables']['bill_documents']['Insert'],
+  'bill_id' | 'id' | 'created_at'
+>;
 
 /**
  * Nested query result types
@@ -522,7 +476,7 @@ export class DatabaseClient {
    */
   async upsertBill(
     sessionId: string,
-    billRecord: BillRecord,
+    billRecord: BillInsert,
     sponsorsData?: SponsorData[],
     actionsData?: ActionData[],
     hearingsData?: HearingData[],
@@ -803,12 +757,29 @@ export class DatabaseClient {
   /**
    * Get bill metadata for embedding generation.
    *
-   * Fetches bill info, session, sponsors, and committees.
+   * Fetches bill info, session, sponsors, and committees for use in embeddings metadata.
    *
    * @param billId - Bill UUID
-   * @returns Object with metadata or null if bill not found
+   * @returns Object with bill metadata for embeddings or null if bill not found
    */
-  async getBillMetadataForEmbeddings(billId: string): Promise<BillMetadata | null> {
+  async getBillMetadataForEmbeddings(billId: string): Promise<{
+    bill_id: string;
+    bill_number: string;
+    session_year: number;
+    session_code: string;
+    primary_sponsor: {
+      id: string;
+      name: string;
+    } | null;
+    cosponsors: Array<{
+      id: string;
+      name: string;
+    }>;
+    committees: Array<{
+      id: string;
+      name: string;
+    }>;
+  } | null> {
     try {
       // Get bill with session info
       const { data: billData, error: billError } = await this._client
