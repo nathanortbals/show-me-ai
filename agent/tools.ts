@@ -8,6 +8,70 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { getSupabaseClient } from '@/ingestion/database/client';
+import { Database } from '@/database/types';
+
+// Type aliases for database tables
+type Bill = Database['public']['Tables']['bills']['Row'];
+type Session = Database['public']['Tables']['sessions']['Row'];
+type Legislator = Database['public']['Tables']['legislators']['Row'];
+type BillAction = Database['public']['Tables']['bill_actions']['Row'];
+type BillHearing = Database['public']['Tables']['bill_hearings']['Row'];
+type Committee = Database['public']['Tables']['committees']['Row'];
+
+// Type for RPC function return
+interface BillEmbeddingMatch {
+  id: string;
+  content: string;
+  metadata: {
+    bill_id?: string;
+    bill_number?: string;
+    session_year?: number;
+    session_code?: string;
+    primary_sponsor_name?: string;
+    cosponsor_names?: string[];
+    committee_names?: string[];
+    content_type?: string;
+  };
+  embedding: string;
+  similarity: number;
+}
+
+// Type for bill query with session relation
+interface BillWithSession extends Omit<Bill, 'sessions'> {
+  sessions: {
+    year: number;
+    session_code: string;
+  } | null;
+}
+
+// Type for sponsor query with nested relations
+interface SponsorWithLegislator {
+  is_primary: boolean;
+  session_legislators: {
+    legislators: {
+      name: string;
+      party_affiliation: string | null;
+    };
+  } | null;
+}
+
+// Type for hearing query with nested relations
+interface HearingWithRelations {
+  hearing_date: string | null;
+  hearing_time: string | null;
+  hearing_time_text: string | null;
+  location: string | null;
+  bills: {
+    bill_number: string;
+    sessions: {
+      year: number;
+      session_code: string;
+    } | null;
+  } | null;
+  committees: {
+    name: string;
+  } | null;
+}
 
 // Normalize bill number to match database format (e.g., "HB1366" -> "HB 1366")
 function normalizeBillNumber(billNumber: string): string {
@@ -49,7 +113,7 @@ export const searchBillsSemantic = tool(
     }
 
     // Format results
-    const results = data.map((row: any) => {
+    const results = (data as BillEmbeddingMatch[]).map((row) => {
       const meta = row.metadata || {};
       const content = row.content || '';
 
@@ -131,6 +195,8 @@ export const getBillByNumber = tool(
       return `Bill ${normalized} not found${sessionYear ? ` for session ${sessionYear}` : ''}.`;
     }
 
+    const billData = data as unknown as BillWithSession;
+
     // Get sponsors
     const { data: sponsorsData } = await supabase
       .from('bill_sponsors')
@@ -138,12 +204,13 @@ export const getBillByNumber = tool(
         is_primary,
         session_legislators(legislators(name, party_affiliation))
       `)
-      .eq('bill_id', data.id);
+      .eq('bill_id', billData.id);
 
     const primarySponsors: string[] = [];
     const cosponsors: string[] = [];
 
-    sponsorsData?.forEach((sponsor: any) => {
+    const typedSponsors = sponsorsData as unknown as SponsorWithLegislator[];
+    typedSponsors?.forEach((sponsor) => {
       const leg = sponsor.session_legislators?.legislators;
       if (!leg) return;
 
@@ -158,14 +225,14 @@ export const getBillByNumber = tool(
       }
     });
 
-    const sessions = data.sessions as any;
-    const result = `Bill: ${data.bill_number}
-Session: ${sessions.year} ${sessions.session_code}
-Title: ${data.title || 'N/A'}
-Description: ${data.description || 'N/A'}
-LR Number: ${data.lr_number || 'N/A'}
-Last Action: ${data.last_action || 'N/A'}
-Proposed Effective Date: ${data.proposed_effective_date || 'N/A'}
+    const sessions = billData.sessions;
+    const result = `Bill: ${billData.bill_number}
+Session: ${sessions?.year} ${sessions?.session_code}
+Title: ${billData.title || 'N/A'}
+Description: ${billData.description || 'N/A'}
+LR Number: ${billData.lr_number || 'N/A'}
+Last Action: ${billData.last_action || 'N/A'}
+Proposed Effective Date: ${billData.proposed_effective_date || 'N/A'}
 
 Primary Sponsor(s): ${primarySponsors.length > 0 ? primarySponsors.join(', ') : 'None'}
 Co-sponsors: ${cosponsors.length > 0 ? cosponsors.slice(0, 5).join(', ') : 'None'}
@@ -209,12 +276,14 @@ export const getLegislatorInfo = tool(
       return `No legislator found matching '${name}'.`;
     }
 
-    if (data.length > 1) {
-      const names = data.slice(0, 10).map((leg: any) => leg.name);
+    const legislators = data as Legislator[];
+
+    if (legislators.length > 1) {
+      const names = legislators.slice(0, 10).map((leg) => leg.name);
       return `Multiple legislators found: ${names.join(', ')}. Please be more specific.`;
     }
 
-    const leg = data[0];
+    const leg = legislators[0];
     const result = `Name: ${leg.name}
 Type: ${leg.legislator_type || 'N/A'}
 Party: ${leg.party_affiliation || 'N/A'}
@@ -268,21 +337,24 @@ export const getBillTimeline = tool(
       return `Bill ${normalized} not found${sessionYear ? ` for session ${sessionYear}` : ''}.`;
     }
 
+    const typedBill = billData as unknown as BillWithSession;
+
     // Get actions
     const { data: actionsData } = await supabase
       .from('bill_actions')
       .select('action_date, description, sequence_order')
-      .eq('bill_id', billData.id)
+      .eq('bill_id', typedBill.id)
       .order('sequence_order');
 
     if (!actionsData || actionsData.length === 0) {
       return `No actions found for ${normalized}.`;
     }
 
-    const sessions = billData.sessions as any;
-    const timeline = [`Timeline for ${billData.bill_number} (${sessions.year} ${sessions.session_code}):`];
+    const typedActions = actionsData as BillAction[];
+    const sessions = typedBill.sessions;
+    const timeline = [`Timeline for ${typedBill.bill_number} (${sessions?.year} ${sessions?.session_code}):`];
 
-    actionsData.forEach((action: any) => {
+    typedActions.forEach((action) => {
       timeline.push(`${action.action_date}: ${action.description}`);
     });
 
@@ -359,10 +431,11 @@ export const getCommitteeHearings = tool(
       return 'No hearings found.';
     }
 
-    const results = data.map((hearing: any) => {
-      const bills = hearing.bills as any;
+    const typedHearings = data as unknown as HearingWithRelations[];
+    const results = typedHearings.map((hearing) => {
+      const bills = hearing.bills;
       const committee = hearing.committees?.name || 'Unknown';
-      const sessions = bills?.sessions as any;
+      const sessions = bills?.sessions;
 
       return `Bill: ${bills?.bill_number || 'Unknown'} (${sessions?.year || ''} ${sessions?.session_code || ''})
 Committee: ${committee}
@@ -419,9 +492,10 @@ export const searchBillsByYear = tool(
       return `No bills found for ${sessionYear}.`;
     }
 
-    const results = data.map((bill: any) => {
-      const sessions = bill.sessions as any;
-      return `${bill.bill_number} (${sessions.year} ${sessions.session_code}): ${bill.title || 'No title'}`;
+    const typedBills = data as unknown as BillWithSession[];
+    const results = typedBills.map((bill) => {
+      const sessions = bill.sessions;
+      return `${bill.bill_number} (${sessions?.year} ${sessions?.session_code}): ${bill.title || 'No title'}`;
     });
 
     return results.join('\n');

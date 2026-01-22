@@ -106,6 +106,34 @@ export interface BillMetadata {
 }
 
 /**
+ * Nested query result types
+ */
+interface SponsorQueryResult {
+  is_primary: boolean;
+  session_legislators: {
+    id: string;
+    legislators: {
+      id: string;
+      name: string;
+    };
+  } | null;
+}
+
+interface CommitteeQueryResult {
+  committees: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+interface BillWithSessionQuery extends Bill {
+  sessions: {
+    year: number;
+    session_code: string;
+  } | null;
+}
+
+/**
  * Database wrapper for all Supabase operations.
  */
 export class DatabaseClient {
@@ -590,18 +618,14 @@ export class DatabaseClient {
             // Get or create committee
             const committeeId = await this.getOrCreateCommittee(hearing.committee_name);
 
-            const hearingRecord: any = {
+            const hearingRecord: Database['public']['Tables']['bill_hearings']['Insert'] = {
               bill_id: billId,
               committee_id: committeeId,
               hearing_date: hearing.hearing_date || null,
               hearing_time: hearing.hearing_time || null,
               location: hearing.location || null,
+              hearing_time_text: hearing.hearing_time_text || null,
             };
-
-            // Add hearing_time_text if provided
-            if (hearing.hearing_time_text !== undefined) {
-              hearingRecord.hearing_time_text = hearing.hearing_time_text;
-            }
 
             await this._client.from('bill_hearings').insert(hearingRecord);
           } catch (error) {
@@ -675,7 +699,7 @@ export class DatabaseClient {
    * @param billId - Bill UUID
    * @returns Array of document records
    */
-  async getBillDocuments(billId: string): Promise<any[]> {
+  async getBillDocuments(billId: string): Promise<BillDocument[]> {
     try {
       const { data, error } = await this._client
         .from('bill_documents')
@@ -706,7 +730,7 @@ export class DatabaseClient {
    * @param billId - Bill UUID
    * @returns Array of 1-2 document records to embed
    */
-  async getEmbeddableBillDocuments(billId: string): Promise<any[]> {
+  async getEmbeddableBillDocuments(billId: string): Promise<BillDocument[]> {
     try {
       const allDocs = await this.getBillDocuments(billId);
 
@@ -732,7 +756,7 @@ export class DatabaseClient {
       ];
 
       // Find introduced version
-      let introduced: any = null;
+      let introduced: BillDocument | null = null;
       for (const doc of legislativeDocs) {
         const docTypeLower = (doc.document_type || '').toLowerCase();
         if (docTypeLower.includes('introduced')) {
@@ -742,7 +766,7 @@ export class DatabaseClient {
       }
 
       // Find most recent version based on hierarchy
-      let mostRecent: any = null;
+      let mostRecent: BillDocument | null = null;
       for (const priorityType of hierarchy) {
         for (const doc of legislativeDocs) {
           const docTypeLower = (doc.document_type || '').toLowerCase().replace(/ /g, '_');
@@ -757,7 +781,7 @@ export class DatabaseClient {
       }
 
       // Return introduced + most recent (deduplicated)
-      const result: any[] = [];
+      const result: BillDocument[] = [];
       if (introduced) {
         result.push(introduced);
       }
@@ -806,8 +830,9 @@ export class DatabaseClient {
 
       if (primarySponsorError) throw primarySponsorError;
 
-      if (primarySponsorData && primarySponsorData.length > 0) {
-        const sl: any = primarySponsorData[0].session_legislators;
+      const typedPrimarySponsor = primarySponsorData as unknown as SponsorQueryResult[];
+      if (typedPrimarySponsor && typedPrimarySponsor.length > 0) {
+        const sl = typedPrimarySponsor[0].session_legislators;
         if (sl && sl.legislators) {
           primarySponsor = {
             id: sl.legislators.id,
@@ -826,9 +851,10 @@ export class DatabaseClient {
 
       if (cosponsorsError) throw cosponsorsError;
 
-      if (cosponsorsData) {
-        for (const sponsor of cosponsorsData) {
-          const sl: any = sponsor.session_legislators;
+      const typedCosponsors = cosponsorsData as unknown as SponsorQueryResult[];
+      if (typedCosponsors) {
+        for (const sponsor of typedCosponsors) {
+          const sl = sponsor.session_legislators;
           if (sl && sl.legislators) {
             cosponsors.push({
               id: sl.legislators.id,
@@ -847,10 +873,11 @@ export class DatabaseClient {
 
       if (committeesError) throw committeesError;
 
-      if (committeesData) {
+      const typedCommittees = committeesData as unknown as CommitteeQueryResult[];
+      if (typedCommittees) {
         const seenCommitteeIds = new Set<string>();
-        for (const hearing of committeesData) {
-          const comm: any = hearing.committees;
+        for (const hearing of typedCommittees) {
+          const comm = hearing.committees;
           if (comm && !seenCommitteeIds.has(comm.id)) {
             committees.push({
               id: comm.id,
@@ -861,7 +888,8 @@ export class DatabaseClient {
         }
       }
 
-      const sessions: any = billData.sessions;
+      const typedBillData = billData as unknown as BillWithSessionQuery;
+      const sessions = typedBillData.sessions;
 
       return {
         bill_id: billData.id,

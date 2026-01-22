@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "types:db": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > database/types.ts",
+    "types:db": "supabase gen types typescript --project-id efzhjpcwuvfsgrhlksrf > database/types.ts",
     "ingest": "tsx ingestion/cli.ts",
     "ingest:legislators": "tsx ingestion/cli.ts scrape-legislators",
     "ingest:bills": "tsx ingestion/cli.ts scrape-bills",
@@ -15,23 +15,26 @@
     "ingest:embeddings:all": "tsx ingestion/cli.ts generate-all-embeddings",
     "ingest:all": "tsx ingestion/cli.ts scrape-all"
   },
+  "overrides": {
+    "pdf-parse": "^1.1.4"
+  },
   "dependencies": {
-    "@langchain/community": "^0.3.17",
+    "@langchain/community": "^1.1.5",
     "@langchain/core": "^1.1.16",
     "@langchain/langgraph": "^1.1.1",
     "@langchain/openai": "^1.2.3",
     "@supabase/supabase-js": "^2.91.0",
-    "axios": "^1.6.0",
-    "commander": "^11.1.0",
-    "dotenv": "^17.2.3",
-    "js-tiktoken": "^1.0.7",
+    "axios": "^1.7.9",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.7",
+    "js-tiktoken": "^1.0.15",
     "langchain": "^1.2.11",
     "next": "16.1.4",
     "pdf-parse": "^1.1.4",
-    "playwright": "^1.40.0",
+    "playwright": "^1.49.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "zod": "^4.3.5"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
