@@ -55,6 +55,9 @@ Updates the `match_bill_embeddings` function signature to match LangChain Supaba
 - New signature: `(query_embedding, match_count, filter)`
 - Adds optional JSONB filter parameter
 - Removes match_threshold (LangChain handles this differently)
+- Increases default match_count to 500 (from 10)
+
+**Why high match_count?**: With function-type filters, PostgREST applies filters AFTER the RPC returns results. The RPC must return enough candidates (500) so that after filtering by session/sponsor/committee, we still have sufficient results.
 
 **Status**: Applied - fixes semantic search compatibility with LangChain v1.x.
 

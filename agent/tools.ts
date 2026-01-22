@@ -99,6 +99,8 @@ export const searchBillsSemantic = tool(
     });
 
     // Build metadata filter function
+    // With function-type filters, PostgREST applies filters AFTER the RPC returns results
+    // LangChain automatically adds .limit(k) after our filter function returns
     const filter: SupabaseFilterRPCCall = (rpc) => {
       let query = rpc;
 
