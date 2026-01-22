@@ -229,7 +229,7 @@ export class EmbeddingsPipeline {
 
       const doc = new Document({
         pageContent: chunk,
-        metadata: metadata as Record<string, any>,
+        metadata: metadata,
       });
       documents.push(doc);
     }
