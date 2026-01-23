@@ -11,6 +11,15 @@ import { resolve } from 'path';
 // Load environment variables from .env.local
 config({ path: resolve(process.cwd(), '.env.local') });
 
+// Handle unhandled promise rejections gracefully
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('\n❌ Unhandled Promise Rejection:');
+  console.error('Reason:', reason);
+  console.error('Promise:', promise);
+  console.log('\nContinuing with next operation...\n');
+  // Don't exit - let the process continue
+});
+
 import { Command } from 'commander';
 import { runLegislatorScraper } from './legislators/scraper';
 import { scrapeBillsForSession } from './bills/scraper';
