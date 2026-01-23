@@ -131,16 +131,21 @@ export class EmbeddingsPipeline {
     storagePath: string,
     bucket: string = "bill-pdfs"
   ): Promise<string> {
-    // Download PDF from storage
-    const blob = await this.db.downloadFromStorage(storagePath, bucket);
+    try {
+      // Download PDF from storage
+      const blob = await this.db.downloadFromStorage(storagePath, bucket);
 
-    // Convert Blob to Buffer
-    const arrayBuffer = await blob.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+      // Convert Blob to Buffer
+      const arrayBuffer = await blob.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
 
-    // Extract text using pdf-parse
-    const data = await pdfParse(buffer);
-    return data.text;
+      // Extract text using pdf-parse
+      const data = await pdfParse(buffer);
+      return data.text;
+    } catch (error) {
+      // Re-throw with more context
+      throw new Error(`Failed to extract text from ${storagePath}: ${error}`);
+    }
   }
 
   /**
@@ -282,14 +287,20 @@ export class EmbeddingsPipeline {
         continue;
       }
 
-      const embeddings = await this.processDocument(
-        billId,
-        doc.id,
-        doc.storage_path,
-        doc.document_type,
-        billMetadata
-      );
-      totalEmbeddings += embeddings;
+      try {
+        const embeddings = await this.processDocument(
+          billId,
+          doc.id,
+          doc.storage_path,
+          doc.document_type,
+          billMetadata
+        );
+        totalEmbeddings += embeddings;
+      } catch (error) {
+        console.error(`  ❌ Error processing document ${doc.storage_path}:`, error);
+        console.log('  Continuing with next document...');
+        // Continue with next document
+      }
     }
 
     // Mark bill as having embeddings generated if successful
