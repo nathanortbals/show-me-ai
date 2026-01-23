@@ -169,77 +169,82 @@ export class EmbeddingsPipeline {
   ): Promise<number> {
     console.log(`  Processing: ${storagePath}`);
 
-    // Extract text from storage
-    let rawText: string;
     try {
-      rawText = await this.extractTextFromStorage(storagePath);
-    } catch (error) {
-      console.log(`    Error extracting text: ${error}`);
-      return 0;
-    }
-
-    // Clean text
-    const cleanText = cleanLegislativeText(rawText);
-    console.log(`    Tokens: ${countTokens(cleanText)}`);
-
-    // Chunk document
-    const { chunks, documentType } = chunkDocument(cleanText, {
-      targetTokens: this.targetTokens,
-      overlapTokens: this.overlapTokens,
-    });
-    console.log(`    Document type: ${documentType}`);
-    console.log(`    Chunks: ${chunks.length}`);
-
-    // Create LangChain Documents with metadata
-    const documents: Document[] = [];
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-
-      // Build metadata dictionary
-      const metadata: ChunkMetadata = {
-        bill_id: billId,
-        bill_number: billMetadata.bill_number,
-        document_id: documentId,
-        content_type: contentType,
-        chunk_index: i,
-        doc_type: documentType,
-        token_count: countTokens(chunk),
-        session_year: billMetadata.session_year,
-        session_code: billMetadata.session_code,
-      };
-
-      // Add primary sponsor
-      if (billMetadata.primary_sponsor) {
-        metadata.primary_sponsor_id = billMetadata.primary_sponsor.id;
-        metadata.primary_sponsor_name = billMetadata.primary_sponsor.name;
+      // Extract text from storage
+      let rawText: string;
+      try {
+        rawText = await this.extractTextFromStorage(storagePath);
+      } catch (error) {
+        console.log(`    Error extracting text: ${error}`);
+        return 0;
       }
 
-      // Add co-sponsors (as lists)
-      if (billMetadata.cosponsors.length > 0) {
-        metadata.cosponsor_ids = billMetadata.cosponsors.map((cs) => cs.id);
-        metadata.cosponsor_names = billMetadata.cosponsors.map((cs) => cs.name);
-      }
+      // Clean text
+      const cleanText = cleanLegislativeText(rawText);
+      console.log(`    Tokens: ${countTokens(cleanText)}`);
 
-      // Add committees (as lists)
-      if (billMetadata.committees.length > 0) {
-        metadata.committee_ids = billMetadata.committees.map((c) => c.id);
-        metadata.committee_names = billMetadata.committees.map((c) => c.name);
-      }
-
-      const doc = new Document({
-        pageContent: chunk,
-        metadata: metadata,
+      // Chunk document
+      const { chunks, documentType } = chunkDocument(cleanText, {
+        targetTokens: this.targetTokens,
+        overlapTokens: this.overlapTokens,
       });
-      documents.push(doc);
-    }
+      console.log(`    Document type: ${documentType}`);
+      console.log(`    Chunks: ${chunks.length}`);
 
-    // Store embeddings using LangChain vector store
-    try {
-      await this.vectorStore.addDocuments(documents);
-      console.log(`    ✓ Created ${documents.length} embeddings`);
-      return documents.length;
+      // Create LangChain Documents with metadata
+      const documents: Document[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+
+        // Build metadata dictionary
+        const metadata: ChunkMetadata = {
+          bill_id: billId,
+          bill_number: billMetadata.bill_number,
+          document_id: documentId,
+          content_type: contentType,
+          chunk_index: i,
+          doc_type: documentType,
+          token_count: countTokens(chunk),
+          session_year: billMetadata.session_year,
+          session_code: billMetadata.session_code,
+        };
+
+        // Add primary sponsor
+        if (billMetadata.primary_sponsor) {
+          metadata.primary_sponsor_id = billMetadata.primary_sponsor.id;
+          metadata.primary_sponsor_name = billMetadata.primary_sponsor.name;
+        }
+
+        // Add co-sponsors (as lists)
+        if (billMetadata.cosponsors.length > 0) {
+          metadata.cosponsor_ids = billMetadata.cosponsors.map((cs) => cs.id);
+          metadata.cosponsor_names = billMetadata.cosponsors.map((cs) => cs.name);
+        }
+
+        // Add committees (as lists)
+        if (billMetadata.committees.length > 0) {
+          metadata.committee_ids = billMetadata.committees.map((c) => c.id);
+          metadata.committee_names = billMetadata.committees.map((c) => c.name);
+        }
+
+        const doc = new Document({
+          pageContent: chunk,
+          metadata: metadata,
+        });
+        documents.push(doc);
+      }
+
+      // Store embeddings using LangChain vector store
+      try {
+        await this.vectorStore.addDocuments(documents);
+        console.log(`    ✓ Created ${documents.length} embeddings`);
+        return documents.length;
+      } catch (error) {
+        console.log(`    Error storing embeddings: ${error}`);
+        return 0;
+      }
     } catch (error) {
-      console.log(`    Error storing embeddings: ${error}`);
+      console.error(`    Unexpected error processing document: ${error}`);
       return 0;
     }
   }
@@ -325,10 +330,16 @@ export class EmbeddingsPipeline {
 
     for (const bill of bills) {
       console.log(`\nProcessing bill ${bill.bill_number} (${bill.id})...`);
-      const embeddings = await this.processBill(bill.id);
-      if (embeddings > 0) {
-        billsProcessed += 1;
-        totalEmbeddings += embeddings;
+      try {
+        const embeddings = await this.processBill(bill.id);
+        if (embeddings > 0) {
+          billsProcessed += 1;
+          totalEmbeddings += embeddings;
+        }
+      } catch (error) {
+        console.error(`  ❌ Error processing bill ${bill.bill_number}:`, error);
+        console.log('  Continuing with next bill...');
+        // Continue to next bill instead of crashing
       }
     }
 
