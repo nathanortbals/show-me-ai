@@ -244,8 +244,6 @@ export class EmbeddingsPipeline {
       try {
         await this.vectorStore.addDocuments(documents);
         console.log(`    ✓ Created ${documents.length} embeddings`);
-        // Add a small delay to allow any background operations to complete
-        await new Promise(resolve => setTimeout(resolve, 100));
         return documents.length;
       } catch (error) {
         console.error(`    Error storing embeddings:`, error);
@@ -299,8 +297,6 @@ export class EmbeddingsPipeline {
           billMetadata
         );
         totalEmbeddings += embeddings;
-        // Add small delay between documents to allow background ops to settle
-        await new Promise(resolve => setTimeout(resolve, 50));
       } catch (error) {
         console.error(`  ❌ Error processing document ${doc.storage_path}:`, error);
         console.log('  Continuing with next document...');
