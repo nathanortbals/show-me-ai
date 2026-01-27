@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect, FormEvent } from 'react';
+import { useState, useRef, useEffect, FormEvent, useCallback } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 
 interface Message {
   id: string;
@@ -9,10 +10,16 @@ interface Message {
 }
 
 export default function ChatPage() {
+  const router = useRouter();
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const threadId = params.threadId as string;
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const initialMessageSentRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -22,26 +29,24 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-
-    if (!input.trim() || isLoading) return;
+  // Send a message (used for both form submit and auto-send)
+  const sendMessage = useCallback(async (messageText: string) => {
+    if (!messageText.trim()) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: messageText,
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput('');
     setIsLoading(true);
 
     try {
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ message: messageText, threadId }),
       });
 
       if (!response.ok) {
@@ -93,6 +98,32 @@ export default function ChatPage() {
     } finally {
       setIsLoading(false);
     }
+  }, [threadId]);
+
+  // Handle initial message from URL
+  useEffect(() => {
+    const initialMessage = searchParams.get('message');
+    if (initialMessage && !initialMessageSentRef.current) {
+      initialMessageSentRef.current = true;
+      // Clear the message from URL
+      router.replace(`/chat/${threadId}`, { scroll: false });
+      // Send the initial message
+      sendMessage(initialMessage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, threadId]);
+
+  // Start a new conversation
+  const handleNewChat = () => {
+    router.push('/');
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    const messageText = input;
+    setInput('');
+    await sendMessage(messageText);
   };
 
   const handleSuggestedQuestion = (question: string) => {
@@ -104,31 +135,53 @@ export default function ChatPage() {
       {/* Header */}
       <div className="border-b border-gray-200 bg-white/80 backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/80">
         <div className="mx-auto max-w-4xl px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                  stroke="currentColor"
+                  className="h-6 w-6"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                  />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                  Missouri Bills Assistant
+                </h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Ask questions about Missouri House legislation
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleNewChat}
+              className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
                 strokeWidth={2}
                 stroke="currentColor"
-                className="h-6 w-6"
+                className="h-4 w-4"
               >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                  d="M12 4.5v15m7.5-7.5h-15"
                 />
               </svg>
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                Missouri Bills Assistant
-              </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Ask questions about Missouri House legislation
-              </p>
-            </div>
+              New Chat
+            </button>
           </div>
         </div>
       </div>

@@ -1,54 +1,56 @@
-import { getAgent } from '@/agent/graph';
-import { HumanMessage } from '@langchain/core/messages';
+import { getAgentGraph } from '@/agent/graph';
+import { AIMessageChunk } from '@langchain/core/messages';
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {
-    const { message } = await req.json();
+    const { message, threadId } = await req.json();
+    console.log('[stream] Request received:', { message: message?.substring(0, 50), threadId });
 
-    if (!message) {
-      return new Response('No message provided', { status: 400 });
+    if (!message || !threadId) {
+      console.log('[stream] Missing required fields');
+      return new Response('Message and threadId are required', { status: 400 });
     }
 
-    // Get agent and stream response
-    const agent = getAgent();
+    const config = {
+      configurable: {
+        thread_id: threadId,
+      },
+    };
 
-    // Stream the agent's response
-    const stream = await agent.stream({
-      messages: [new HumanMessage(message)],
-    });
+    // Get agent graph with PostgresSaver checkpointer
+    console.log('[stream] Getting agent graph...');
+    const graph = await getAgentGraph();
+    console.log('[stream] Agent graph ready');
+
+    // Stream with "messages" mode for token-level streaming
+    console.log('[stream] Starting stream...');
+    const stream = await graph.stream(
+      { messages: [{ role: "user", content: message }] },
+      { ...config, streamMode: 'messages' }
+    );
+    console.log('[stream] Stream created');
 
     // Create a text stream from LangChain
     const encoder = new TextEncoder();
     const readableStream = new ReadableStream({
       async start(controller) {
         try {
-          let previousContent = '';
+          for await (const [token] of stream) {
+            // Only stream AI message chunks (not tool messages)
+            if (token instanceof AIMessageChunk) {
+              const content = token.content;
 
-          for await (const chunk of stream) {
-            const messages = chunk.messages || [];
-            if (messages.length > 0) {
-              const lastMessage = messages[messages.length - 1];
-
-              if (lastMessage.content) {
-                const currentContent = typeof lastMessage.content === 'string'
-                  ? lastMessage.content
-                  : JSON.stringify(lastMessage.content);
-
-                // Only send the new content (delta)
-                if (currentContent.length > previousContent.length) {
-                  const delta = currentContent.slice(previousContent.length);
-                  controller.enqueue(encoder.encode(delta));
-                  previousContent = currentContent;
-                }
+              if (content && typeof content === 'string' && content.length > 0) {
+                controller.enqueue(encoder.encode(content));
               }
             }
           }
 
           controller.close();
         } catch (error) {
-          console.error('Stream error:', error);
+          console.error('[stream] Stream error:', error);
           controller.error(error);
         }
       },
@@ -62,7 +64,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Agent error:', error);
+    console.error('[stream] Agent error:', error);
     return new Response('Internal server error', { status: 500 });
   }
 }

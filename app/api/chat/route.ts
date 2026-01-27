@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runAgent } from '@/agent/graph';
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,13 +8,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    const response = await runAgent(message);
+    // Generate a new thread ID
+    const threadId = crypto.randomUUID();
 
-    return NextResponse.json({ response });
+    return NextResponse.json({ threadId });
   } catch (error) {
-    console.error('Agent error:', error);
+    console.error('Chat error:', error);
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      { error: 'Failed to create chat' },
       { status: 500 }
     );
   }

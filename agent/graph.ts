@@ -1,11 +1,16 @@
 /**
  * LangGraph agent for Missouri Bills queries.
  *
- * Uses LangChain's createAgent helper for simplified agent creation.
+ * Uses createReactAgent from @langchain/langgraph/prebuilt for agent creation.
+ *
+ * TODO: Switch back to `createAgent` from 'langchain' once the PostgresSaver
+ * circular JSON serialization bug is fixed.
+ * See: https://github.com/langchain-ai/langgraphjs/issues/1808
  */
 
-import { createAgent } from 'langchain';
-import { MemorySaver, MessagesAnnotation } from '@langchain/langgraph';
+import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { ChatOpenAI } from '@langchain/openai';
+import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { getTools } from './tools';
 
 /**
@@ -32,16 +37,40 @@ Always provide clear, accurate information based on the data retrieved from your
 Be concise but comprehensive in your responses.`;
 
 /**
- * Create the Missouri Bills agent using LangChain's createAgent helper
+ * Create the OpenAI model instance
  */
-const checkpointer = new MemorySaver();
-
-const agent = createAgent({
+const model = new ChatOpenAI({
   model: 'gpt-4o',
-  systemPrompt,
-  tools: getTools(),
-  stateSchema: MessagesAnnotation,
-  checkpointer,
+  temperature: 0,
 });
 
-export const graph = agent.graph;
+/**
+ * PostgresSaver checkpointer for persistent conversation history.
+ * Setup is called lazily on first use via getAgentGraph().
+ */
+const checkpointer = PostgresSaver.fromConnString(process.env.SUPABASE_DB_URL!);
+let checkpointerInitialized = false;
+
+/**
+ * The agent graph with PostgresSaver checkpointer.
+ * Used by both Next.js API routes and LangGraph Studio.
+ */
+export const graph = createReactAgent({
+  llm: model,
+  tools: getTools(),
+  messageModifier: systemPrompt,
+  checkpointSaver: checkpointer,
+});
+
+/**
+ * Get the agent graph, ensuring the checkpointer is initialized.
+ * Call this from Next.js API routes to ensure setup() has been called.
+ */
+export async function getAgentGraph() {
+  if (!checkpointerInitialized) {
+    await checkpointer.setup();
+    checkpointerInitialized = true;
+  }
+
+  return graph;
+}

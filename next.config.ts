@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: [
+    'langchain',
+    '@langchain/core',
+    '@langchain/community',
+    '@langchain/langgraph',
+    '@langchain/langgraph-checkpoint-postgres',
+    '@langchain/openai',
+  ],
 };
 
 export default nextConfig;
