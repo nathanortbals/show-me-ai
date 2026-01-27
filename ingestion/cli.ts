@@ -25,7 +25,7 @@ import { runLegislatorScraper } from './legislators/scraper';
 import { scrapeBillsForSession } from './bills/scraper';
 import { processSession } from './embeddings/pipeline';
 import { extractTextForSession } from './text-extraction/extractor';
-import { DatabaseClient } from './database/client';
+import { DatabaseClient } from '@/database/client';
 
 // All Missouri House sessions from 2026 to 2000
 const SESSIONS = [

@@ -6,7 +6,7 @@
  */
 
 import pdfParse from 'pdf-parse';
-import { DatabaseClient } from '@/ingestion/database/client';
+import { DatabaseClient } from '@/database/client';
 
 export interface TextExtractionResult {
   documentsProcessed: number;

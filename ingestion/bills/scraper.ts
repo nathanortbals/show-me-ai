@@ -14,7 +14,7 @@ import {
   ActionData,
   HearingData,
   DocumentData,
-} from '@/ingestion/database/client';
+} from '@/database/client';
 import { Database } from '@/database/types';
 
 /**

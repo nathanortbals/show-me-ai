@@ -11,7 +11,7 @@ import {
   SupabaseVectorStore,
   SupabaseFilterRPCCall,
 } from '@langchain/community/vectorstores/supabase';
-import { getSupabaseClient } from '@/ingestion/database/client';
+import { getSupabaseClient } from '@/database/client';
 import { Database } from '@/database/types';
 
 // Type aliases for database tables

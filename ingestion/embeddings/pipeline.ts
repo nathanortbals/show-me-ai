@@ -10,7 +10,7 @@ import pdfParse from "pdf-parse";
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { Document } from "@langchain/core/documents";
-import { DatabaseClient } from "../database/client";
+import { DatabaseClient } from '@/database/client';
 import {
   cleanLegislativeText,
   chunkDocument,

@@ -3,7 +3,7 @@
  */
 
 import { chromium, Browser, Page } from 'playwright';
-import { DatabaseClient } from '@/ingestion/database/client';
+import { DatabaseClient } from '@/database/client';
 
 /**
  * Legislator list item from roster page
