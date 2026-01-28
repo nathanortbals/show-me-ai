@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, FormEvent, useCallback } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { Streamdown } from 'streamdown';
+import Image from 'next/image';
 
 interface Message {
   id: string;
@@ -167,24 +168,9 @@ export default function ChatPage() {
         <div className="mx-auto max-w-3xl px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#ad0636] text-white">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  stroke="currentColor"
-                  className="h-5 w-5"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                  />
-                </svg>
-              </div>
+              <Image src="/logo.svg" alt="Show-Me AI" width={36} height={36} />
               <div>
-                <h1 className="text-base font-medium text-white">Missouri Bills</h1>
+                <h1 className="text-base font-medium text-white">Show-Me AI</h1>
               </div>
             </div>
             <button
@@ -286,7 +272,7 @@ export default function ChatPage() {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about Missouri House bills..."
+              placeholder="Ask about Missouri legislation..."
               disabled={isLoading || isLoadingHistory}
               className="flex-1 rounded-full border border-neutral-700 bg-neutral-900 px-5 py-3 text-sm text-white placeholder-neutral-500 transition-colors focus:border-blue-500/50 focus:outline-none disabled:opacity-50"
             />
