@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * CLI for Missouri Bills ingestion pipeline
+ * CLI for Show-Me AI ingestion pipeline
  *
  * Provides commands for scraping legislators, bills, and generating embeddings.
  */
@@ -133,8 +133,8 @@ const SESSIONS = [
 const program = new Command();
 
 program
-  .name('mo-bills-ingest')
-  .description('Missouri Bills ingestion tools')
+  .name('show-me-ai-ingest')
+  .description('Show-Me AI ingestion tools')
   .version('0.1.0');
 
 // Scrape legislators command

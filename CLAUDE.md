@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MO Bills is an AI-powered chatbot for querying Missouri House of Representatives bills using RAG (Retrieval-Augmented Generation). Built as a **TypeScript monorepo**, the project scrapes legislative data, generates vector embeddings, and provides a Next.js application with a LangGraph.js agent for natural language queries.
+Show-Me AI is an AI-powered chatbot for querying Missouri House of Representatives bills using RAG (Retrieval-Augmented Generation). Named after Missouri's nickname, "The Show-Me State." Built as a **TypeScript monorepo**, the project scrapes legislative data, generates vector embeddings, and provides a Next.js application with a LangGraph.js agent for natural language queries.
 
 **Current Phase**: Phase 3 complete (AI Agent with Next.js). Migrated to TypeScript monorepo. Next phases: UI improvements, production deployment.
 

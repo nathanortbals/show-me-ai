@@ -1,0 +1,45 @@
+# Node modules (will be installed by Vercel)
+node_modules/
+
+# Downloaded bill PDFs
+bill_pdfs/
+
+# Next.js build output
+.next/
+out/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Ingestion layer (not needed for Next.js app)
+ingestion/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Testing
+test*.csv
+test_pdfs/
+coverage/
+
+# Environment files
+.env
+.env.local
+.env*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Claude/LangGraph local
+.claude/
+.langgraph_api/
+
+# Git
+.git/

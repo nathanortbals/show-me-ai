@@ -1,6 +1,6 @@
-# MO Bills
+# Show-Me AI
 
-An AI-powered chatbot for querying and analyzing Missouri House of Representatives bills using RAG (Retrieval-Augmented Generation).
+An AI-powered chatbot for querying and analyzing Missouri House of Representatives bills using RAG (Retrieval-Augmented Generation). Named after Missouri's nickname, "The Show-Me State."
 
 ## Vision
 
@@ -121,8 +121,8 @@ This project aims to make Missouri legislative information accessible and querya
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/nathanortbals/mo-bills.git
-cd mo-bills
+git clone https://github.com/nathanortbals/show-me-ai.git
+cd show-me-ai
 ```
 
 2. Install dependencies:
@@ -208,7 +208,7 @@ npm install -g @langchain/langgraph-cli
 
 3. Open the project in LangGraph Studio:
 ```bash
-# Using Desktop App: File -> Open Project -> select mo-bills directory
+# Using Desktop App: File -> Open Project -> select show-me-ai directory
 
 # Using CLI:
 langgraphjs dev
@@ -312,7 +312,7 @@ The text extraction pipeline will:
 ## Project Structure
 
 ```
-mo-bills/
+show-me-ai/
 ├── app/                          # Next.js application
 │   ├── app/                      # Next.js app directory
 │   │   ├── api/chat/            # Chat API endpoint
@@ -355,4 +355,4 @@ MIT License - See LICENSE file for details
 
 Nathan Ortbals - nathan.ortbals@gmail.com
 
-Project Link: https://github.com/nathanortbals/mo-bills
+Project Link: https://github.com/nathanortbals/show-me-ai
