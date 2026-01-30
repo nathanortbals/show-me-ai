@@ -1,41 +1,5 @@
 import { getSupabaseClient } from '@/database/client';
-
-// Type for bill with all related data
-interface BillDetails {
-  id: string;
-  bill_number: string;
-  title: string | null;
-  description: string | null;
-  lr_number: string | null;
-  last_action: string | null;
-  proposed_effective_date: string | null;
-  bill_url: string | null;
-  session: {
-    year: number;
-    session_code: string;
-  } | null;
-  sponsors: Array<{
-    name: string;
-    party: string | null;
-    is_primary: boolean;
-  }>;
-  actions: Array<{
-    date: string | null;
-    description: string;
-  }>;
-  hearings: Array<{
-    committee: string;
-    date: string | null;
-    time: string | null;
-    location: string | null;
-  }>;
-  documents: Array<{
-    id: string;
-    title: string;
-    type: string;
-    url: string;
-  }>;
-}
+import type { BillDetails, TimelineEvent } from '@/app/types/bill';
 
 export async function GET(
   req: Request,
@@ -77,7 +41,8 @@ export async function GET(
       .select(`
         is_primary,
         session_legislators(
-          legislators(name, party_affiliation)
+          district,
+          legislators(name, party_affiliation, picture_url)
         )
       `)
       .eq('bill_id', id)
@@ -87,6 +52,8 @@ export async function GET(
       .map((s: any) => ({
         name: s.session_legislators?.legislators?.name || 'Unknown',
         party: s.session_legislators?.legislators?.party_affiliation || null,
+        district: s.session_legislators?.district || null,
+        picture_url: s.session_legislators?.legislators?.picture_url || null,
         is_primary: s.is_primary,
       }))
       .filter((s: any) => s.name !== 'Unknown');
@@ -94,38 +61,27 @@ export async function GET(
     // Fetch actions
     const { data: actionsData } = await supabase
       .from('bill_actions')
-      .select('action_date, description')
+      .select('id, action_date, description, sequence_order')
       .eq('bill_id', id)
       .order('sequence_order', { ascending: true });
-
-    const actions = (actionsData || []).map((a: any) => ({
-      date: a.action_date,
-      description: a.description,
-    }));
 
     // Fetch hearings
     const { data: hearingsData } = await supabase
       .from('bill_hearings')
       .select(`
+        id,
         hearing_date,
         hearing_time_text,
         location,
         committees(name)
       `)
       .eq('bill_id', id)
-      .order('hearing_date', { ascending: false });
-
-    const hearings = (hearingsData || []).map((h: any) => ({
-      committee: h.committees?.name || 'Unknown Committee',
-      date: h.hearing_date,
-      time: h.hearing_time_text,
-      location: h.location,
-    }));
+      .order('hearing_date', { ascending: true });
 
     // Fetch documents
     const { data: documentsData } = await supabase
       .from('bill_documents')
-      .select('document_id, document_title, document_type, document_url')
+      .select('id, document_id, document_title, document_type, document_url')
       .eq('bill_id', id);
 
     const documents = (documentsData || []).map((d: any) => ({
@@ -134,6 +90,81 @@ export async function GET(
       type: d.document_type,
       url: d.document_url,
     }));
+
+    // Create a map of document types for linking to timeline
+    const documentsByType = new Map<string, typeof documents[0]>();
+    for (const doc of documents) {
+      // Use the document type as key (e.g., "Introduced", "Perfected", "Third Read")
+      documentsByType.set(doc.type.toLowerCase(), doc);
+    }
+
+    // Helper to find associated document for an action
+    const findDocumentForAction = (description: string): typeof documents[0] | null => {
+      const descLower = description.toLowerCase();
+      if (descLower.includes('introduced') || descLower.includes('prefiled')) {
+        return documentsByType.get('introduced') || documentsByType.get('bill text') || null;
+      }
+      if (descLower.includes('perfected')) {
+        return documentsByType.get('perfected') || null;
+      }
+      if (descLower.includes('third read')) {
+        return documentsByType.get('third read') || null;
+      }
+      return null;
+    };
+
+    // Build timeline from actions
+    const timeline: TimelineEvent[] = [];
+    const today = new Date().toISOString().split('T')[0];
+
+    // Add actions to timeline
+    for (const action of actionsData || []) {
+      const associatedDoc = findDocumentForAction(action.description);
+      timeline.push({
+        id: `action-${action.id}`,
+        type: 'action',
+        status: 'completed',
+        date: action.action_date,
+        title: action.description,
+        document: associatedDoc ? {
+          id: associatedDoc.id,
+          title: associatedDoc.title,
+          url: associatedDoc.url,
+        } : null,
+      });
+    }
+
+    // Add hearings to timeline
+    for (const hearing of hearingsData || []) {
+      const hearingDate = hearing.hearing_date;
+      const isUpcoming = hearingDate && hearingDate >= today;
+
+      timeline.push({
+        id: `hearing-${hearing.id}`,
+        type: 'hearing',
+        status: isUpcoming ? 'scheduled' : 'completed',
+        date: hearing.hearing_date,
+        title: 'Committee Hearing',
+        committee: (hearing.committees as any)?.name || 'Unknown Committee',
+        time: hearing.hearing_time_text,
+        location: hearing.location,
+      });
+    }
+
+    // Sort timeline by date (nulls last), then by type (actions before hearings on same day)
+    timeline.sort((a, b) => {
+      if (!a.date && !b.date) return 0;
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      // Same date: actions before hearings
+      if (a.type === 'action' && b.type === 'hearing') return -1;
+      if (a.type === 'hearing' && b.type === 'action') return 1;
+      return 0;
+    });
+
+    // Determine chamber from bill number
+    const chamber: 'house' | 'senate' = bill.bill_number.startsWith('S') ? 'senate' : 'house';
 
     // Build response
     const session = bill.sessions as any;
@@ -146,13 +177,13 @@ export async function GET(
       last_action: bill.last_action,
       proposed_effective_date: bill.proposed_effective_date,
       bill_url: bill.bill_url,
+      chamber,
       session: session ? {
         year: session.year,
         session_code: session.session_code,
       } : null,
       sponsors,
-      actions,
-      hearings,
+      timeline,
       documents,
     };
 
