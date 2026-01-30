@@ -47,6 +47,32 @@ function MarkdownLink({
   const state = href ? parseHashToDrawerState(href) : null;
 
   if (state) {
+    // Person icon for legislators
+    const PersonIcon = () => (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        className="h-3.5 w-3.5 shrink-0"
+      >
+        <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12.735 14c.618 0 1.093-.561.872-1.139a6.002 6.002 0 0 0-11.215 0c-.22.578.254 1.139.872 1.139h9.47Z" />
+      </svg>
+    );
+
+    // Document icon for bills
+    const DocumentIcon = () => (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        className="h-3.5 w-3.5 shrink-0"
+      >
+        <path d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.286 0 .56.114.762.316l2.586 2.586a1.076 1.076 0 0 1 .316.762v9.586A1.75 1.75 0 0 1 13.25 15h-7.5A1.75 1.75 0 0 1 4 13.25V1.75Zm5.75 0h-.75v3c0 .414.336.75.75.75h3v7.5a.25.25 0 0 1-.25.25h-7.5a.25.25 0 0 1-.25-.25V1.75a.25.25 0 0 1 .25-.25Z" />
+      </svg>
+    );
+
+    const Icon = state.type === 'legislator' ? PersonIcon : DocumentIcon;
+
     return (
       <a
         {...props}
@@ -55,18 +81,10 @@ function MarkdownLink({
           e.preventDefault();
           onOpenDrawer(state);
         }}
-        className="inline-flex items-center gap-1 rounded-full bg-neutral-700/50 px-2 py-0.5 text-sm text-neutral-200 hover:bg-neutral-600/50 transition-colors cursor-pointer no-underline"
+        className="inline-flex items-center gap-1 rounded-full bg-neutral-700/50 px-2 text-sm text-neutral-200 hover:bg-neutral-600/50 transition-colors cursor-pointer no-underline"
       >
+        <Icon />
         {children}
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 16 16"
-          fill="currentColor"
-          className="h-3.5 w-3.5 shrink-0"
-        >
-          <path d="M6.22 8.72a.75.75 0 0 0 1.06 1.06l5.22-5.22v1.69a.75.75 0 0 0 1.5 0v-3.5a.75.75 0 0 0-.75-.75h-3.5a.75.75 0 0 0 0 1.5h1.69L6.22 8.72Z" />
-          <path d="M3.5 6.75c0-.69.56-1.25 1.25-1.25H7A.75.75 0 0 0 7 4H4.75A2.75 2.75 0 0 0 2 6.75v4.5A2.75 2.75 0 0 0 4.75 14h4.5A2.75 2.75 0 0 0 12 11.25V9a.75.75 0 0 0-1.5 0v2.25c0 .69-.56 1.25-1.25 1.25h-4.5c-.69 0-1.25-.56-1.25-1.25v-4.5Z" />
-        </svg>
       </a>
     );
   }
