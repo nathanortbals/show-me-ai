@@ -24,23 +24,24 @@ export default function Drawer({ isOpen, onClose, title, children }: DrawerProps
     }
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   return (
     <>
-      {/* Backdrop */}
+      {/* Mobile Backdrop - only shows on mobile when open */}
       <div
-        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 lg:hidden ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
       />
 
-      {/* Drawer */}
+      {/* Drawer Panel */}
       <div
-        className={`fixed right-0 top-0 z-50 h-full w-full max-w-lg transform overflow-y-auto bg-neutral-900 shadow-xl transition-transform duration-300 ease-in-out ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
+        className={`
+          fixed right-0 top-0 z-50 h-full w-full max-w-lg overflow-y-auto bg-neutral-900 shadow-xl
+          transition-transform duration-300 ease-in-out
+          lg:relative lg:z-0 lg:shrink-0 lg:shadow-none lg:border-l lg:border-neutral-800
+          ${isOpen ? 'translate-x-0' : 'translate-x-full lg:hidden'}
+        `}
       >
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-800 bg-neutral-900 px-6 py-4">

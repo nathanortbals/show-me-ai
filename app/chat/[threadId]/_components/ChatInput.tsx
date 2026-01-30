@@ -18,7 +18,7 @@ export default function ChatInput({
   disabled = false,
 }: ChatInputProps) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-20">
+    <div className="absolute bottom-0 left-0 right-0 z-20">
       <div className="pointer-events-none bg-linear-to-t from-neutral-950 from-70% to-transparent pb-4 pt-8">
         <div className="pointer-events-auto mx-auto max-w-3xl px-4">
           <form onSubmit={onSubmit} className="relative">

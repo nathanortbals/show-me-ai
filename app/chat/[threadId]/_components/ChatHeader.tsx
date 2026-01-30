@@ -8,7 +8,7 @@ interface ChatHeaderProps {
 
 export default function ChatHeader({ onNewChat }: ChatHeaderProps) {
   return (
-    <div className="fixed left-0 top-0 z-20 flex items-center gap-4 px-6 py-4">
+    <div className="absolute left-0 top-0 z-20 flex items-center gap-4 px-6 py-4">
       <Link href="/">
         <h1 className="font-(family-name:--font-playfair) text-xl leading-none font-semibold tracking-wide text-white hover:text-neutral-300 transition-colors">
           SHOW-ME AI

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, FormEvent, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, FormEvent, useCallback } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import {
   ChatHeader,
@@ -10,44 +10,16 @@ import {
   ChatTypingIndicator,
   Drawer,
   BillDrawerContent,
+  useMarkdownComponents,
+  parseHashToDrawerState,
+  drawerStateToHash,
+  type DrawerState,
 } from './_components';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-}
-
-// Drawer state type - extensible for future drawer types
-type DrawerState =
-  | { type: 'bill'; id: string }
-  | { type: 'legislator'; id: string }
-  | { type: 'document'; id: string }
-  | null;
-
-// Parse hash to drawer state
-function parseHashToDrawerState(hash: string): DrawerState {
-  if (!hash || !hash.startsWith('#')) return null;
-
-  const [type, id] = hash.slice(1).split(':');
-  if (!type || !id) return null;
-
-  switch (type) {
-    case 'bill':
-      return { type: 'bill', id };
-    case 'legislator':
-      return { type: 'legislator', id };
-    case 'document':
-      return { type: 'document', id };
-    default:
-      return null;
-  }
-}
-
-// Convert drawer state to hash
-function drawerStateToHash(state: DrawerState): string {
-  if (!state) return '';
-  return `#${state.type}:${state.id}`;
 }
 
 export default function ChatPage() {
@@ -92,53 +64,8 @@ export default function ChatPage() {
     history.pushState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
   }, []);
 
-  // Custom link component for Streamdown that handles entity references
-  const MarkdownLink = useCallback(
-    ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
-      const state = href ? parseHashToDrawerState(href) : null;
-
-      if (state) {
-        return (
-          <a
-            {...props}
-            href={href}
-            onClick={(e) => {
-              e.preventDefault();
-              openDrawer(state);
-            }}
-            className="inline-flex items-center gap-1 rounded-full bg-neutral-700/50 px-2 py-0.5 text-sm text-neutral-200 hover:bg-neutral-600/50 transition-colors cursor-pointer no-underline"
-          >
-            {children}
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-              className="h-3.5 w-3.5 shrink-0"
-            >
-              <path d="M6.22 8.72a.75.75 0 0 0 1.06 1.06l5.22-5.22v1.69a.75.75 0 0 0 1.5 0v-3.5a.75.75 0 0 0-.75-.75h-3.5a.75.75 0 0 0 0 1.5h1.69L6.22 8.72Z" />
-              <path d="M3.5 6.75c0-.69.56-1.25 1.25-1.25H7A.75.75 0 0 0 7 4H4.75A2.75 2.75 0 0 0 2 6.75v4.5A2.75 2.75 0 0 0 4.75 14h4.5A2.75 2.75 0 0 0 12 11.25V9a.75.75 0 0 0-1.5 0v2.25c0 .69-.56 1.25-1.25 1.25h-4.5c-.69 0-1.25-.56-1.25-1.25v-4.5Z" />
-            </svg>
-          </a>
-        );
-      }
-
-      // External links open in new tab
-      return (
-        <a
-          {...props}
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-400 hover:underline"
-        >
-          {children}
-        </a>
-      );
-    },
-    [openDrawer]
-  );
-
-  const markdownComponents = useMemo(() => ({ a: MarkdownLink }), [MarkdownLink]);
+  // Markdown components with drawer link handling
+  const markdownComponents = useMarkdownComponents(openDrawer);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -298,38 +225,41 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950">
-      <ChatHeader onNewChat={handleNewChat} />
+    <div className="flex h-screen bg-neutral-950">
+      {/* Main Chat Area */}
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        <ChatHeader onNewChat={handleNewChat} />
 
-      {/* Messages */}
-      <div className="px-4 pb-32 pt-20">
-        <div className="mx-auto max-w-3xl space-y-6">
-          {isLoadingHistory && <ChatLoadingSpinner message="Loading conversation..." />}
+        {/* Messages - Scrollable */}
+        <div className="flex-1 overflow-y-auto px-4 pb-32 pt-20">
+          <div className="mx-auto max-w-3xl space-y-6">
+            {isLoadingHistory && <ChatLoadingSpinner message="Loading conversation..." />}
 
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              role={message.role}
-              content={message.content}
-              markdownComponents={markdownComponents}
-            />
-          ))}
+            {messages.map((message) => (
+              <ChatMessage
+                key={message.id}
+                role={message.role}
+                content={message.content}
+                markdownComponents={markdownComponents}
+              />
+            ))}
 
-          {isLoading && messages[messages.length - 1]?.role === 'user' && <ChatTypingIndicator />}
+            {isLoading && messages[messages.length - 1]?.role === 'user' && <ChatTypingIndicator />}
 
-          <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} />
+          </div>
         </div>
+
+        <ChatInput
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          isLoading={isLoading}
+          disabled={isLoadingHistory}
+        />
       </div>
 
-      <ChatInput
-        value={input}
-        onChange={setInput}
-        onSubmit={handleSubmit}
-        isLoading={isLoading}
-        disabled={isLoadingHistory}
-      />
-
-      {/* Dynamic Drawer */}
+      {/* Dynamic Drawer - sits next to chat on desktop */}
       <Drawer isOpen={!!drawerState} onClose={closeDrawer} title={drawerTitle}>
         {renderDrawerContent()}
       </Drawer>
