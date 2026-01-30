@@ -54,15 +54,6 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium
 
-      - name: Scrape legislators
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          echo "Scraping legislators for $SESSION_YEAR $SESSION_CODE"
-          npm run ingest:legislators -- --year $SESSION_YEAR --session-code $SESSION_CODE
-
       - name: Scrape bills
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -70,22 +61,5 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           echo "Scraping bills for $SESSION_YEAR $SESSION_CODE"
+          echo "Note: Text extraction and embeddings are generated inline"
           npm run ingest:bills -- --year $SESSION_YEAR --session-code $SESSION_CODE
-
-      - name: Generate embeddings
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          echo "Generating embeddings for $SESSION_YEAR $SESSION_CODE"
-          npm run ingest:embeddings -- --year $SESSION_YEAR --session-code $SESSION_CODE
-
-      - name: Extract text
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          echo "Extracting text for $SESSION_YEAR $SESSION_CODE"
-          npm run ingest:text -- --year $SESSION_YEAR --session-code $SESSION_CODE
