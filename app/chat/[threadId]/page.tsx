@@ -6,7 +6,7 @@ import {
   ChatHeader,
   ChatInput,
   ChatMessage,
-  ChatLoadingSpinner,
+  LoadingSpinner,
   ChatTypingIndicator,
   Drawer,
   BillDrawerContent,
@@ -233,7 +233,7 @@ export default function ChatPage() {
         {/* Messages - Scrollable */}
         <div className="flex-1 overflow-y-auto px-4 pb-32 pt-20">
           <div className="mx-auto max-w-3xl space-y-6">
-            {isLoadingHistory && <ChatLoadingSpinner message="Loading conversation..." />}
+            {isLoadingHistory && <LoadingSpinner message="Loading conversation..." />}
 
             {messages.map((message) => (
               <ChatMessage
