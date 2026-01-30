@@ -128,7 +128,7 @@ export const searchBillsSemantic = tool(
           ? `Summary: ${billData.title}\n`
           : '';
 
-        return `Bill: ${meta.bill_number || 'Unknown'}
+        return `Bill: ${meta.bill_number || 'Unknown'} (ID: ${meta.bill_id || 'unknown'})
 Session: ${meta.session_year} ${meta.session_code || ''}
 Document Type: ${meta.content_type || 'Unknown'}
 Sponsor: ${meta.primary_sponsor_name || 'Unknown'}${cosponsorsStr}${committeesStr}

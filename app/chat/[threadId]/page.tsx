@@ -1,14 +1,53 @@
 'use client';
 
-import { useState, useRef, useEffect, FormEvent, useCallback } from 'react';
+import { useState, useRef, useEffect, FormEvent, useCallback, useMemo } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { Streamdown } from 'streamdown';
+import {
+  ChatHeader,
+  ChatInput,
+  ChatMessage,
+  ChatLoadingSpinner,
+  ChatTypingIndicator,
+  Drawer,
+  BillDrawerContent,
+} from './_components';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+}
+
+// Drawer state type - extensible for future drawer types
+type DrawerState =
+  | { type: 'bill'; id: string }
+  | { type: 'legislator'; id: string }
+  | { type: 'document'; id: string }
+  | null;
+
+// Parse hash to drawer state
+function parseHashToDrawerState(hash: string): DrawerState {
+  if (!hash || !hash.startsWith('#')) return null;
+
+  const [type, id] = hash.slice(1).split(':');
+  if (!type || !id) return null;
+
+  switch (type) {
+    case 'bill':
+      return { type: 'bill', id };
+    case 'legislator':
+      return { type: 'legislator', id };
+    case 'document':
+      return { type: 'document', id };
+    default:
+      return null;
+  }
+}
+
+// Convert drawer state to hash
+function drawerStateToHash(state: DrawerState): string {
+  if (!state) return '';
+  return `#${state.type}:${state.id}`;
 }
 
 export default function ChatPage() {
@@ -21,9 +60,85 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [drawerState, setDrawerState] = useState<DrawerState>(null);
+  const [drawerTitle, setDrawerTitle] = useState<string>('Details');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initialMessageSentRef = useRef(false);
   const historyLoadedRef = useRef(false);
+
+  // Handle hash changes (including initial load)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const state = parseHashToDrawerState(window.location.hash);
+      setDrawerState(state);
+    };
+
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Close drawer and clear hash
+  const closeDrawer = useCallback(() => {
+    setDrawerState(null);
+    setDrawerTitle('Details');
+    history.pushState(null, '', window.location.pathname + window.location.search);
+  }, []);
+
+  // Open drawer with state
+  const openDrawer = useCallback((state: DrawerState) => {
+    setDrawerState(state);
+    const hash = drawerStateToHash(state);
+    history.pushState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
+  }, []);
+
+  // Custom link component for Streamdown that handles entity references
+  const MarkdownLink = useCallback(
+    ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+      const state = href ? parseHashToDrawerState(href) : null;
+
+      if (state) {
+        return (
+          <a
+            {...props}
+            href={href}
+            onClick={(e) => {
+              e.preventDefault();
+              openDrawer(state);
+            }}
+            className="inline-flex items-center gap-1 rounded-full bg-neutral-700/50 px-2 py-0.5 text-sm text-neutral-200 hover:bg-neutral-600/50 transition-colors cursor-pointer no-underline"
+          >
+            {children}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              className="h-3.5 w-3.5 shrink-0"
+            >
+              <path d="M6.22 8.72a.75.75 0 0 0 1.06 1.06l5.22-5.22v1.69a.75.75 0 0 0 1.5 0v-3.5a.75.75 0 0 0-.75-.75h-3.5a.75.75 0 0 0 0 1.5h1.69L6.22 8.72Z" />
+              <path d="M3.5 6.75c0-.69.56-1.25 1.25-1.25H7A.75.75 0 0 0 7 4H4.75A2.75 2.75 0 0 0 2 6.75v4.5A2.75 2.75 0 0 0 4.75 14h4.5A2.75 2.75 0 0 0 12 11.25V9a.75.75 0 0 0-1.5 0v2.25c0 .69-.56 1.25-1.25 1.25h-4.5c-.69 0-1.25-.56-1.25-1.25v-4.5Z" />
+            </svg>
+          </a>
+        );
+      }
+
+      // External links open in new tab
+      return (
+        <a
+          {...props}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-400 hover:underline"
+        >
+          {children}
+        </a>
+      );
+    },
+    [openDrawer]
+  );
+
+  const markdownComponents = useMemo(() => ({ a: MarkdownLink }), [MarkdownLink]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -47,7 +162,6 @@ export default function ChatPage() {
 
   // Load chat history on mount
   useEffect(() => {
-    // Skip if we have an initial message (new chat) or already loaded
     const initialMessage = searchParams.get('message');
     if (initialMessage || historyLoadedRef.current) {
       setIsLoadingHistory(false);
@@ -75,7 +189,7 @@ export default function ChatPage() {
     loadHistory();
   }, [threadId, searchParams]);
 
-  // Send a message (used for both form submit and auto-send)
+  // Send a message
   const sendMessage = useCallback(
     async (messageText: string) => {
       if (!messageText.trim()) return;
@@ -100,7 +214,6 @@ export default function ChatPage() {
           throw new Error('Failed to get response');
         }
 
-        // Create assistant message that we'll update as we stream
         const assistantMessageId = (Date.now() + 1).toString();
         const assistantMessage: Message = {
           id: assistantMessageId,
@@ -110,7 +223,6 @@ export default function ChatPage() {
 
         setMessages((prev) => [...prev, assistantMessage]);
 
-        // Read the stream
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
 
@@ -120,12 +232,9 @@ export default function ChatPage() {
 
         while (true) {
           const { done, value } = await reader.read();
-
           if (done) break;
 
           const chunk = decoder.decode(value);
-
-          // Update the assistant message with accumulated content
           setMessages((prev) =>
             prev.map((msg) =>
               msg.id === assistantMessageId ? { ...msg, content: msg.content + chunk } : msg
@@ -152,15 +261,12 @@ export default function ChatPage() {
     const initialMessage = searchParams.get('message');
     if (initialMessage && !initialMessageSentRef.current) {
       initialMessageSentRef.current = true;
-      // Clear the message from URL
       router.replace(`/chat/${threadId}`, { scroll: false });
-      // Send the initial message
       sendMessage(initialMessage);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, threadId]);
 
-  // Start a new conversation
   const handleNewChat = () => {
     router.push('/');
   };
@@ -173,167 +279,60 @@ export default function ChatPage() {
     await sendMessage(messageText);
   };
 
+  // Render drawer content based on state
+  const renderDrawerContent = () => {
+    if (!drawerState) return null;
+
+    switch (drawerState.type) {
+      case 'bill':
+        return <BillDrawerContent billId={drawerState.id} onTitleChange={setDrawerTitle} />;
+      case 'legislator':
+        // Future: LegislatorDrawerContent
+        return <div className="text-neutral-400">Legislator details coming soon...</div>;
+      case 'document':
+        // Future: DocumentDrawerContent
+        return <div className="text-neutral-400">Document details coming soon...</div>;
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950">
-      {/* Fixed Header - Top Left */}
-      <div className="fixed left-0 top-0 z-20 flex items-center gap-4 px-6 py-4">
-        <Link href="/">
-          <h1 className="font-(family-name:--font-playfair) text-xl leading-none font-semibold tracking-wide text-white hover:text-neutral-300 transition-colors">
-            SHOW-ME AI
-          </h1>
-        </Link>
-        <button
-          onClick={handleNewChat}
-          className="flex items-center gap-2 rounded-full border border-neutral-700 bg-neutral-950/80 px-3 py-1.5 text-sm text-neutral-300 backdrop-blur-sm transition-colors hover:border-neutral-600 hover:bg-neutral-900"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-            className="h-4 w-4"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          New
-        </button>
-      </div>
+      <ChatHeader onNewChat={handleNewChat} />
 
-      {/* Messages - Full page scrollable */}
+      {/* Messages */}
       <div className="px-4 pb-32 pt-20">
         <div className="mx-auto max-w-3xl space-y-6">
-          {isLoadingHistory && (
-            <div className="flex items-center justify-center py-12">
-              <div className="flex items-center gap-2 text-neutral-500">
-                <svg
-                  className="h-5 w-5 animate-spin"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-                <span>Loading conversation...</span>
-              </div>
-            </div>
-          )}
+          {isLoadingHistory && <ChatLoadingSpinner message="Loading conversation..." />}
 
           {messages.map((message) => (
-            <div
+            <ChatMessage
               key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                  message.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-neutral-900 text-neutral-100'
-                }`}
-              >
-                {message.role === 'user' ? (
-                  <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                    {message.content}
-                  </div>
-                ) : (
-                  <div className="prose prose-sm prose-invert max-w-none wrap-break-word prose-p:leading-relaxed prose-pre:bg-neutral-800">
-                    <Streamdown>{message.content}</Streamdown>
-                  </div>
-                )}
-              </div>
-            </div>
+              role={message.role}
+              content={message.content}
+              markdownComponents={markdownComponents}
+            />
           ))}
 
-          {isLoading && messages[messages.length - 1]?.role === 'user' && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl bg-neutral-900 px-4 py-3">
-                <div className="flex items-center gap-1">
-                  <div className="h-2 w-2 animate-bounce rounded-full bg-neutral-600 [animation-delay:-0.3s]"></div>
-                  <div className="h-2 w-2 animate-bounce rounded-full bg-neutral-600 [animation-delay:-0.15s]"></div>
-                  <div className="h-2 w-2 animate-bounce rounded-full bg-neutral-600"></div>
-                </div>
-              </div>
-            </div>
-          )}
+          {isLoading && messages[messages.length - 1]?.role === 'user' && <ChatTypingIndicator />}
 
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Fixed Input Overlay */}
-      <div className="fixed bottom-0 left-0 right-0 z-20">
-        <div className="pointer-events-none bg-linear-to-t from-neutral-950 from-70% to-transparent pb-4 pt-8">
-          <div className="pointer-events-auto mx-auto max-w-3xl px-4">
-            <form onSubmit={handleSubmit} className="relative">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about Missouri legislation..."
-                disabled={isLoading || isLoadingHistory}
-                className="w-full rounded-full border border-neutral-700 bg-neutral-900 px-5 py-3 pr-14 text-sm text-white placeholder-neutral-500 shadow-lg transition-colors focus:border-blue-500/50 focus:outline-none disabled:opacity-50"
-              />
-              <button
-                type="submit"
-                disabled={isLoading || isLoadingHistory || !input.trim()}
-                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-[#ad0636] text-white transition-all hover:bg-[#8a0529] disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <svg
-                    className="h-4 w-4 animate-spin"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    stroke="currentColor"
-                    className="h-4 w-4"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
-                    />
-                  </svg>
-                )}
-              </button>
-            </form>
-            <p className="mt-3 text-center text-xs text-neutral-600">
-              AI can make mistakes. Verify with official sources.
-            </p>
-          </div>
-        </div>
-      </div>
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSubmit={handleSubmit}
+        isLoading={isLoading}
+        disabled={isLoadingHistory}
+      />
+
+      {/* Dynamic Drawer */}
+      <Drawer isOpen={!!drawerState} onClose={closeDrawer} title={drawerTitle}>
+        {renderDrawerContent()}
+      </Drawer>
     </div>
   );
 }

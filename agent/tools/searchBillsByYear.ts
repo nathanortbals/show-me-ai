@@ -54,7 +54,7 @@ export const searchBillsByYear = tool(
     const typedBills = data as unknown as BillWithSession[];
     const results = typedBills.map((bill) => {
       const sessions = bill.sessions;
-      return `${bill.bill_number} (${sessions?.year} ${sessions?.session_code}): ${bill.title || 'No title'}`;
+      return `${bill.bill_number} (ID: ${bill.id}) - ${sessions?.year} ${sessions?.session_code}: ${bill.title || 'No title'}`;
     });
 
     return results.join('\n');

@@ -104,7 +104,7 @@ export const getBillByNumber = tool(
     });
 
     const sessions = billData.sessions;
-    const result = `Bill: ${billData.bill_number}
+    const result = `Bill: ${billData.bill_number} (ID: ${billData.id})
 Session: ${sessions?.year} ${sessions?.session_code}
 Title: ${billData.title || 'N/A'}
 Description: ${billData.description || 'N/A'}

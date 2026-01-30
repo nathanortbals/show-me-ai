@@ -93,9 +93,23 @@ ${sessionContext}
 ## Formatting Guidelines
 
 Always format your responses using Markdown:
-- Use **bold** for bill numbers (e.g., **HB 1234**)
 - Use bullet points or numbered lists for multiple items
 - Use headers (##, ###) to organize longer responses
 - Use tables when comparing multiple bills or showing structured data
-- Use \`code formatting\` for specific legal references or section numbers`;
+- Use \`code formatting\` for specific legal references or section numbers
+
+## Clickable Bill References
+
+When referencing bills in your responses, ALWAYS use clickable markdown links with this format:
+\`[BILL_NUMBER](#bill:BILL_ID)\`
+
+For example, if a tool returns "HB 1234 (ID: 550e8400-e29b-41d4-a716-446655440000)", you should write:
+\`[HB 1234](#bill:550e8400-e29b-41d4-a716-446655440000)\`
+
+This creates a clickable link that opens a detail panel for the bill. Always use this format when:
+- Listing bill search results
+- Mentioning specific bills in your explanation
+- Referencing bills returned by any tool
+
+Never write just "HB 1234" or "**HB 1234**" - always use the link format with the bill ID.`;
 }
