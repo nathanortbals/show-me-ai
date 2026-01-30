@@ -37,7 +37,7 @@ Show-Me AI is an AI-powered chatbot for querying Missouri House of Representativ
 
 **Two-Step Scraping Workflow**: Always scrape legislators first (they must exist before bills can reference them), then scrape bills. This is critical.
 
-**Smart Chunking**: Legislative text uses section-based chunking (keeps "Section A" together). Summaries use sentence-based chunking with overlap. See `ingestion/embeddings/chunking.ts`.
+**Smart Chunking**: Legislative text uses section-based chunking (keeps "Section A" together). Summaries use sentence-based chunking with overlap. See `ingestion/bills/chunking.ts`.
 
 **Inline Processing**: Text extraction and embedding generation happen during bill scraping (single pass). Bills with existing extracted text are skipped unless `--force` is used.
 
@@ -115,7 +115,7 @@ Central database client class. All database operations go through this. Key meth
 - `getBillsForSession(skipEmbedded=true)` - Filters out already-embedded bills
 - `markBillEmbeddingsGenerated()` - Called after successful embedding creation
 
-### `ingestion/embeddings/chunking.ts`
+### `ingestion/bills/chunking.ts`
 Text preprocessing and chunking logic:
 - `cleanLegislativeText()` - Strips null bytes, line numbers, headers
 - `chunkBySections()` - For legislative text (keeps sections together)
