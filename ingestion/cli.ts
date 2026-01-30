@@ -174,12 +174,10 @@ program
     console.log(`\n${'='.repeat(80)}`);
     console.log(`SCRAPING BILLS: ${year} ${sessionCode}`);
     console.log('='.repeat(80));
-    console.log('Note: PDFs are downloaded, text is extracted, and embeddings are generated inline.');
-    console.log('      PDFs are NOT uploaded to Supabase Storage.');
     if (!force) {
-      console.log('      Bills with existing extracted text will be skipped (use --force to re-process).\n');
+      console.log('Bills with existing extracted text will be skipped (use --force to re-process).\n');
     } else {
-      console.log('      --force enabled: All bills will be re-processed.\n');
+      console.log('--force enabled: All bills will be re-processed.\n');
     }
 
     try {

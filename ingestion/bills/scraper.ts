@@ -272,16 +272,97 @@ class MoHouseBillScraper {
 }
 
 /**
+ * Scraped bill data ready for processing.
+ */
+interface ScrapedBill {
+  bill: BillData;
+  details: BillData;
+  cosponsors: string;
+  actions: string;
+  hearings: string;
+}
+
+/**
+ * Process a single bill: download PDFs, insert to DB, generate embeddings.
+ * This is the parallelizable part of bill processing.
+ */
+async function processBill(
+  scraper: MoHouseBillScraper,
+  database: DatabaseClient,
+  scrapedBill: ScrapedBill,
+  pdfDir: string,
+  index: number,
+  total: number
+): Promise<{ success: boolean; billNumber: string }> {
+  const { bill, details, cosponsors, actions, hearings } = scrapedBill;
+  const billNumber = bill.bill_number;
+
+  console.log(`[${index}/${total}] Processing ${billNumber}...`);
+
+  try {
+    // Download PDFs and extract text
+    let documentInfo: DocumentInfo[] = [];
+    try {
+      documentInfo = await downloadBillDocuments(billNumber, details.bill_documents || '', pdfDir);
+    } catch (e) {
+      console.log(`  Warning: Could not download PDFs for ${billNumber}: ${e}`);
+    }
+
+    // Merge basic info with detailed info
+    const merged: BillData = {
+      ...bill,
+      ...details,
+      cosponsors,
+      actions,
+      hearings,
+    };
+
+    // Insert to database
+    const [billId, wasUpdated] = await scraper.insertBillToDb(merged, documentInfo);
+    if (wasUpdated) {
+      console.log(`  ✓ ${billNumber}: Updated in database`);
+    } else {
+      console.log(`  ✓ ${billNumber}: Inserted to database`);
+    }
+
+    // Generate embeddings
+    try {
+      const embeddingsCount = await generateEmbeddingsForBill(database, billId, documentInfo);
+      if (embeddingsCount > 0) {
+        console.log(`  ✓ ${billNumber}: Generated ${embeddingsCount} embeddings`);
+      }
+    } catch (e) {
+      console.log(`  Warning: Could not generate embeddings for ${billNumber}: ${e}`);
+    }
+
+    return { success: true, billNumber };
+  } catch (e) {
+    console.log(`  Error processing ${billNumber}: ${e}`);
+    return { success: false, billNumber };
+  }
+}
+
+/** Number of bills to process in parallel during phase 2 */
+const CONCURRENCY = 5;
+
+/**
  * Scrape bills for a session.
  *
- * Main entry point for bill scraping. Handles browser lifecycle, scraping,
- * PDF text extraction, embedding generation, and database insertion.
+ * Main entry point for bill scraping. Uses a two-phase approach:
+ * 1. Scrape all bill metadata sequentially (browser limitation)
+ * 2. Process bills in parallel batches (PDF download + DB + embeddings)
  *
  * @param options - Scraper options (year, sessionCode, limit, pdfDir, force)
  * @param db - Optional database instance (creates one if not provided)
  */
 export async function scrapeBillsForSession(
-  options: { year?: number; sessionCode?: string; limit?: number; pdfDir?: string; force?: boolean } = {},
+  options: {
+    year?: number;
+    sessionCode?: string;
+    limit?: number;
+    pdfDir?: string;
+    force?: boolean;
+  } = {},
   db?: DatabaseClient
 ): Promise<void> {
   const { year, sessionCode = 'R', limit, pdfDir = 'bill_pdfs', force = false } = options;
@@ -294,7 +375,8 @@ export async function scrapeBillsForSession(
 
     const sessionId = await scraper.getOrCreateSession();
     const sessionYear = year || 2026;
-    console.log(`Using session: ${sessionYear} ${sessionCode} (ID: ${sessionId})\n`);
+    console.log(`Using session: ${sessionYear} ${sessionCode} (ID: ${sessionId})`);
+    console.log(`Concurrency: ${CONCURRENCY} bills in parallel\n`);
 
     const page = scraper.getPage();
     const bills = await scrapeBillList(page, year, sessionCode);
@@ -309,14 +391,20 @@ export async function scrapeBillsForSession(
       console.log(`Limited to first ${limit} bills`);
     }
 
-    console.log(`Scraping detailed information for ${billsToProcess.length} bills...`);
+    // ========================================
+    // PHASE 1: Scrape metadata (sequential)
+    // ========================================
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`PHASE 1: Scraping metadata for ${billsToProcess.length} bills...`);
+    console.log('='.repeat(60));
 
+    const scrapedBills: ScrapedBill[] = [];
     let skippedCount = 0;
 
     for (let i = 0; i < billsToProcess.length; i++) {
       const bill = billsToProcess[i];
       const billNumber = bill.bill_number;
-      console.log(`[${i + 1}/${billsToProcess.length}] Scraping details for ${billNumber}...`);
+      console.log(`[${i + 1}/${billsToProcess.length}] Scraping ${billNumber}...`);
 
       // Check if bill already has extracted text (skip unless forced)
       if (!force) {
@@ -324,7 +412,7 @@ export async function scrapeBillsForSession(
         if (existingBillId) {
           const hasExtractedText = await database.billHasExtractedText(existingBillId);
           if (hasExtractedText) {
-            console.log(`  ⏭️  Skipping - already has extracted text (use --force to re-process)`);
+            console.log(`  ⏭️  Skipping - already has extracted text`);
             skippedCount++;
             continue;
           }
@@ -339,7 +427,7 @@ export async function scrapeBillsForSession(
         try {
           cosponsors = await scrapeCosponsors(page, billNumber, year, sessionCode);
         } catch (e) {
-          console.log(`  Warning: Could not scrape co-sponsors for ${billNumber}: ${e}`);
+          console.log(`  Warning: Could not scrape co-sponsors: ${e}`);
         }
 
         // Scrape bill actions
@@ -347,7 +435,7 @@ export async function scrapeBillsForSession(
         try {
           actions = await scrapeActions(page, billNumber, year, sessionCode);
         } catch (e) {
-          console.log(`  Warning: Could not scrape actions for ${billNumber}: ${e}`);
+          console.log(`  Warning: Could not scrape actions: ${e}`);
         }
 
         // Scrape bill hearings
@@ -355,56 +443,80 @@ export async function scrapeBillsForSession(
         try {
           hearings = await scrapeHearings(page, billNumber, year, sessionCode);
         } catch (e) {
-          console.log(`  Warning: Could not scrape hearings for ${billNumber}: ${e}`);
+          console.log(`  Warning: Could not scrape hearings: ${e}`);
         }
 
-        // Download PDFs and extract text
-        let documentInfo: DocumentInfo[] = [];
-        try {
-          documentInfo = await downloadBillDocuments(billNumber, details.bill_documents, pdfDir);
-        } catch (e) {
-          console.log(`  Warning: Could not download PDFs for ${billNumber}: ${e}`);
-        }
-
-        // Merge basic info with detailed info
-        const merged: BillData = {
-          ...bill,
-          ...details,
-          cosponsors,
-          actions,
-          hearings,
-        };
-
-        // Insert to database
-        try {
-          const [billId, wasUpdated] = await scraper.insertBillToDb(merged, documentInfo);
-          if (wasUpdated) {
-            console.log(`  ✓ Updated in database with ID: ${billId}`);
-          } else {
-            console.log(`  ✓ Inserted to database with ID: ${billId}`);
-          }
-
-          // Generate embeddings
-          try {
-            const embeddingsCount = await generateEmbeddingsForBill(database, billId, documentInfo);
-            if (embeddingsCount > 0) {
-              console.log(`  ✓ Generated ${embeddingsCount} embeddings`);
-            }
-          } catch (e) {
-            console.log(`  Warning: Could not generate embeddings for ${billNumber}: ${e}`);
-          }
-        } catch (e) {
-          console.log(`  Error inserting/updating to database: ${e}`);
-        }
+        scrapedBills.push({ bill, details, cosponsors, actions, hearings });
       } catch (e) {
         console.log(`  Error scraping ${billNumber}: ${e}`);
       }
     }
 
-    const processedCount = billsToProcess.length - skippedCount;
-    console.log(`\n✓ Successfully processed ${processedCount} bills into database`);
+    console.log(`\n✓ Phase 1 complete: ${scrapedBills.length} bills scraped`);
     if (skippedCount > 0) {
-      console.log(`  (${skippedCount} bills skipped - already had extracted text)`);
+      console.log(`  (${skippedCount} skipped - already had extracted text)`);
+    }
+
+    // Close browser - no longer needed
+    await scraper.close();
+
+    if (scrapedBills.length === 0) {
+      console.log('\nNo bills to process.');
+      return;
+    }
+
+    // ========================================
+    // PHASE 2: Process bills (parallel)
+    // ========================================
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`PHASE 2: Processing ${scrapedBills.length} bills (${CONCURRENCY} concurrent)...`);
+    console.log('='.repeat(60));
+
+    let processedCount = 0;
+    let failedCount = 0;
+
+    // Process in batches for controlled parallelism
+    for (let i = 0; i < scrapedBills.length; i += CONCURRENCY) {
+      const batch = scrapedBills.slice(i, i + CONCURRENCY);
+      const batchStart = i + 1;
+      const batchEnd = Math.min(i + CONCURRENCY, scrapedBills.length);
+
+      console.log(`\n--- Batch ${Math.floor(i / CONCURRENCY) + 1}: Bills ${batchStart}-${batchEnd} ---`);
+
+      const results = await Promise.all(
+        batch.map((scrapedBill, batchIndex) =>
+          processBill(
+            scraper,
+            database,
+            scrapedBill,
+            pdfDir,
+            i + batchIndex + 1,
+            scrapedBills.length
+          )
+        )
+      );
+
+      for (const result of results) {
+        if (result.success) {
+          processedCount++;
+        } else {
+          failedCount++;
+        }
+      }
+    }
+
+    // ========================================
+    // Summary
+    // ========================================
+    console.log(`\n${'='.repeat(60)}`);
+    console.log('COMPLETE');
+    console.log('='.repeat(60));
+    console.log(`✓ Successfully processed: ${processedCount} bills`);
+    if (failedCount > 0) {
+      console.log(`✗ Failed: ${failedCount} bills`);
+    }
+    if (skippedCount > 0) {
+      console.log(`⏭️  Skipped: ${skippedCount} bills (already had extracted text)`);
     }
   } finally {
     await scraper.close();
