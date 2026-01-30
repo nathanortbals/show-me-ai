@@ -1,0 +1,39 @@
+/**
+ * Agent tools index - exports all tools and the getTools function.
+ */
+
+// Export individual tools
+export { searchBillsSemantic } from './searchBillsSemantic';
+export { getBillByNumber } from './getBillByNumber';
+export { getLegislatorInfo } from './getLegislatorInfo';
+export { getLegislatorBills } from './getLegislatorBills';
+export { getBillTimeline } from './getBillTimeline';
+export { getCommitteeHearings } from './getCommitteeHearings';
+export { searchBillsByYear } from './searchBillsByYear';
+
+// Export utils for potential use by other modules
+export * from './utils';
+
+// Import tools for getTools function
+import { searchBillsSemantic } from './searchBillsSemantic';
+import { getBillByNumber } from './getBillByNumber';
+import { getLegislatorInfo } from './getLegislatorInfo';
+import { getLegislatorBills } from './getLegislatorBills';
+import { getBillTimeline } from './getBillTimeline';
+import { getCommitteeHearings } from './getCommitteeHearings';
+import { searchBillsByYear } from './searchBillsByYear';
+
+/**
+ * Get all agent tools
+ */
+export function getTools() {
+  return [
+    searchBillsSemantic,
+    getBillByNumber,
+    getLegislatorInfo,
+    getLegislatorBills,
+    getBillTimeline,
+    getCommitteeHearings,
+    searchBillsByYear,
+  ];
+}
