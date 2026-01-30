@@ -8,6 +8,7 @@ import { chromium, Browser, Page } from 'playwright';
 import axios from 'axios';
 import { promises as fs } from 'fs';
 import path from 'path';
+import pdfParse from 'pdf-parse';
 import {
   DatabaseClient,
   SponsorData,
@@ -16,6 +17,7 @@ import {
   DocumentData,
 } from '@/database/client';
 import { Database } from '@/database/types';
+import { EmbeddingsPipeline } from '@/ingestion/embeddings/pipeline';
 
 /**
  * Bill list item from the bill list page
@@ -47,13 +49,14 @@ export interface BillDetails {
 }
 
 /**
- * Document information including storage path
+ * Document information including extracted text
  */
 export interface DocumentInfo {
   type: string;
   url: string;
   local_path: string;
   storage_path: string | null;
+  extracted_text: string | null;
 }
 
 /**
@@ -622,7 +625,9 @@ export class MoHouseBillScraper {
   }
 
   /**
-   * Download bill document PDFs and upload to Supabase Storage
+   * Download bill document PDFs and extract text in-memory.
+   * PDFs are saved locally and text is extracted for embedding generation.
+   * No longer uploads to Supabase Storage.
    */
   async downloadBillDocuments(
     billNumber: string,
@@ -667,26 +672,29 @@ export class MoHouseBillScraper {
         await fs.writeFile(filepath, pdfContent);
         console.log(`    Saved locally to ${filepath}`);
 
-        // Upload to Supabase Storage
-        let storagePath: string | null = null;
-        if (this.db && this.sessionId) {
-          // Create storage path: {year}/{session_code}/{bill_number}/{filename}
-          const storagePathTemplate = `${this.year}/${this.sessionCode}/${billNumber}/${filename}`;
-          storagePath = await this.db.uploadPdfToStorage(
-            pdfContent,
-            storagePathTemplate,
-            this.storageBucket
-          );
-          if (storagePath) {
-            console.log(`    ✓ Uploaded to storage: ${storagePath}`);
+        // Extract text from PDF in-memory
+        let extractedText: string | null = null;
+        try {
+          // Suppress pdf.js font warnings (TT: undefined function, etc.)
+          const originalWarn = console.warn;
+          console.warn = () => {};
+          try {
+            const pdfData = await pdfParse(pdfContent);
+            extractedText = pdfData.text;
+          } finally {
+            console.warn = originalWarn;
           }
+          console.log(`    ✓ Extracted ${extractedText.length} characters of text`);
+        } catch (error) {
+          console.log(`    Warning: Could not extract text from PDF: ${error}`);
         }
 
         documentInfo.push({
           type: docType,
           url: docUrl,
           local_path: filepath,
-          storage_path: storagePath,
+          storage_path: null, // No longer uploading to storage
+          extracted_text: extractedText,
         });
       } catch (error) {
         console.log(`    Error downloading ${docType}: ${error}`);
@@ -694,6 +702,140 @@ export class MoHouseBillScraper {
     }
 
     return documentInfo;
+  }
+
+  /**
+   * Generate embeddings for embeddable documents that have extracted text.
+   * This is called after the bill is inserted to the database.
+   *
+   * @param billId - Bill UUID
+   * @param documentInfo - Array of document info with extracted text
+   * @returns Total number of embeddings created
+   */
+  async generateEmbeddingsForBill(
+    billId: string,
+    documentInfo: DocumentInfo[]
+  ): Promise<number> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    // Get bill metadata for embeddings
+    const billMetadata = await this.db.getBillMetadataForEmbeddings(billId);
+    if (!billMetadata) {
+      console.log(`    Could not fetch metadata for bill ${billId}`);
+      return 0;
+    }
+
+    // Filter to embeddable documents (Introduced + most recent, excluding fiscal notes)
+    const embeddableDocs = this.filterEmbeddableDocuments(documentInfo);
+    if (embeddableDocs.length === 0) {
+      console.log(`    No embeddable documents with extracted text`);
+      return 0;
+    }
+
+    // Create embeddings pipeline
+    const pipeline = new EmbeddingsPipeline(this.db);
+
+    let totalEmbeddings = 0;
+
+    for (const doc of embeddableDocs) {
+      if (!doc.extracted_text) {
+        continue;
+      }
+
+      console.log(`    Generating embeddings for ${doc.type}...`);
+      try {
+        const embeddings = await pipeline.processDocumentFromText(
+          billId,
+          undefined, // documentId not available until after insert
+          doc.extracted_text,
+          doc.type,
+          billMetadata
+        );
+        totalEmbeddings += embeddings;
+      } catch (error) {
+        console.log(`    Warning: Could not generate embeddings for ${doc.type}: ${error}`);
+      }
+    }
+
+    // Mark bill as having embeddings generated
+    if (totalEmbeddings > 0) {
+      await this.db.markBillEmbeddingsGenerated(billId);
+    }
+
+    return totalEmbeddings;
+  }
+
+  /**
+   * Filter document info to only include embeddable documents.
+   * Returns "Introduced" version and the most recent version (if different).
+   * Excludes fiscal notes (.ORG files).
+   */
+  private filterEmbeddableDocuments(documentInfo: DocumentInfo[]): DocumentInfo[] {
+    // Filter out fiscal notes and documents without extracted text
+    const legislativeDocs = documentInfo.filter((doc) => {
+      const hasText = !!doc.extracted_text;
+      const isFiscalNote = doc.url?.includes('.ORG') || doc.type?.toLowerCase().includes('fiscal');
+      return hasText && !isFiscalNote;
+    });
+
+    if (legislativeDocs.length === 0) {
+      return [];
+    }
+
+    // Document type hierarchy for determining most recent
+    const hierarchy = [
+      'truly agreed',
+      'truly_agreed',
+      'senate_comm_sub',
+      'senate comm sub',
+      'senate committee substitute',
+      'perfected',
+      'committee',
+      'introduced',
+    ];
+
+    // Find introduced version
+    let introduced: DocumentInfo | null = null;
+    for (const doc of legislativeDocs) {
+      const docTypeLower = (doc.type || '').toLowerCase();
+      if (docTypeLower.includes('introduced')) {
+        introduced = doc;
+        break;
+      }
+    }
+
+    // Find most recent version based on hierarchy
+    let mostRecent: DocumentInfo | null = null;
+    for (const priorityType of hierarchy) {
+      for (const doc of legislativeDocs) {
+        const docTypeLower = (doc.type || '').toLowerCase().replace(/ /g, '_');
+        if (docTypeLower.includes(priorityType)) {
+          mostRecent = doc;
+          break;
+        }
+      }
+      if (mostRecent) {
+        break;
+      }
+    }
+
+    // Return introduced + most recent (deduplicated)
+    const result: DocumentInfo[] = [];
+    if (introduced) {
+      result.push(introduced);
+    }
+    if (mostRecent && mostRecent !== introduced) {
+      result.push(mostRecent);
+    }
+
+    // If we didn't find either, return the first legislative doc
+    if (result.length === 0 && legislativeDocs.length > 0) {
+      result.push(legislativeDocs[0]);
+    }
+
+    return result;
   }
 
   /**
@@ -807,12 +949,13 @@ export class MoHouseBillScraper {
     // Prepare documents data
     const documentsData: DocumentData[] = [];
     if (documentInfo) {
-      // Use the document_info with storage paths if provided
+      // Use the document_info with extracted text if provided
       for (const docInfo of documentInfo) {
         documentsData.push({
           document_type: docInfo.type,
           document_url: docInfo.url,
           storage_path: docInfo.storage_path || undefined,
+          extracted_text: docInfo.extracted_text || undefined,
         });
       }
     } else if (billData.bill_documents) {
@@ -825,6 +968,7 @@ export class MoHouseBillScraper {
             document_type: parts[0].trim(),
             document_url: parts[1].trim(),
             storage_path: undefined,
+            extracted_text: undefined,
           });
         }
       }
@@ -845,14 +989,14 @@ export class MoHouseBillScraper {
 /**
  * Convenience function to scrape bills for a session.
  *
- * @param options - Scraper options (year, sessionCode, limit, pdfDir)
+ * @param options - Scraper options (year, sessionCode, limit, pdfDir, force)
  * @param db - Optional database instance (creates one if not provided)
  */
 export async function scrapeBillsForSession(
-  options: { year?: number; sessionCode?: string; limit?: number; pdfDir?: string } = {},
+  options: { year?: number; sessionCode?: string; limit?: number; pdfDir?: string; force?: boolean } = {},
   db?: DatabaseClient
 ): Promise<void> {
-  const { year, sessionCode = 'R', limit, pdfDir = 'bill_pdfs' } = options;
+  const { year, sessionCode = 'R', limit, pdfDir = 'bill_pdfs', force = false } = options;
 
   // Get or create Database instance
   const database = db || new DatabaseClient();
@@ -883,10 +1027,25 @@ export async function scrapeBillsForSession(
     // Scrape detailed information
     console.log(`Scraping detailed information for ${billsToProcess.length} bills...`);
 
+    let skippedCount = 0;
+
     for (let i = 0; i < billsToProcess.length; i++) {
       const bill = billsToProcess[i];
       const billNumber = bill.bill_number;
       console.log(`[${i + 1}/${billsToProcess.length}] Scraping details for ${billNumber}...`);
+
+      // Check if bill already has extracted text (skip unless forced)
+      if (!force) {
+        const existingBillId = await database.getBillIdByNumber(billNumber, scraper['sessionId']);
+        if (existingBillId) {
+          const hasExtractedText = await database.billHasExtractedText(existingBillId);
+          if (hasExtractedText) {
+            console.log(`  ⏭️  Skipping - already has extracted text (use --force to re-process)`);
+            skippedCount++;
+            continue;
+          }
+        }
+      }
 
       try {
         const details = await scraper.scrapeBillDetails(billNumber);
@@ -915,7 +1074,7 @@ export async function scrapeBillsForSession(
           console.log(`  Warning: Could not scrape hearings for ${billNumber}: ${e}`);
         }
 
-        // Download PDFs and upload to Supabase Storage
+        // Download PDFs and extract text (no longer uploads to Supabase Storage)
         let documentInfo: DocumentInfo[] = [];
         try {
           documentInfo = await scraper.downloadBillDocuments(
@@ -936,13 +1095,23 @@ export async function scrapeBillsForSession(
           hearings,
         };
 
-        // Insert to database with document info (including storage paths)
+        // Insert to database with document info (including extracted text)
         try {
           const [billId, wasUpdated] = await scraper.insertBillToDb(merged, documentInfo);
           if (wasUpdated) {
             console.log(`  ✓ Updated in database with ID: ${billId}`);
           } else {
             console.log(`  ✓ Inserted to database with ID: ${billId}`);
+          }
+
+          // Generate embeddings inline from extracted text
+          try {
+            const embeddingsCount = await scraper.generateEmbeddingsForBill(billId, documentInfo);
+            if (embeddingsCount > 0) {
+              console.log(`  ✓ Generated ${embeddingsCount} embeddings`);
+            }
+          } catch (e) {
+            console.log(`  Warning: Could not generate embeddings for ${billNumber}: ${e}`);
           }
         } catch (e) {
           console.log(`  Error inserting/updating to database: ${e}`);
@@ -952,7 +1121,11 @@ export async function scrapeBillsForSession(
       }
     }
 
-    console.log(`\n✓ Successfully processed ${billsToProcess.length} bills into database`);
+    const processedCount = billsToProcess.length - skippedCount;
+    console.log(`\n✓ Successfully processed ${processedCount} bills into database`);
+    if (skippedCount > 0) {
+      console.log(`  (${skippedCount} bills skipped - already had extracted text)`);
+    }
   } finally {
     await scraper.close();
   }

@@ -117,6 +117,34 @@ export function chunkBySentences(
   for (const sentence of sentences) {
     const sentenceTokens = countTokens(sentence, model);
 
+    // If a single sentence is too large, split it by words
+    if (sentenceTokens > targetTokens) {
+      // Flush current chunk first
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk.join(" "));
+        currentChunk = [];
+        currentTokens = 0;
+      }
+      // Split oversized sentence by words
+      const words = sentence.split(/\s+/);
+      let wordChunk: string[] = [];
+      let wordTokens = 0;
+      for (const word of words) {
+        const wTokens = countTokens(word, model);
+        if (wordTokens + wTokens > targetTokens && wordChunk.length > 0) {
+          chunks.push(wordChunk.join(" "));
+          wordChunk = [];
+          wordTokens = 0;
+        }
+        wordChunk.push(word);
+        wordTokens += wTokens;
+      }
+      if (wordChunk.length > 0) {
+        chunks.push(wordChunk.join(" "));
+      }
+      continue;
+    }
+
     // If adding this sentence would exceed target, start new chunk
     if (currentTokens + sentenceTokens > targetTokens && currentChunk.length > 0) {
       chunks.push(currentChunk.join(" "));
@@ -170,7 +198,7 @@ export function chunkBySections(
   text: string,
   options: ChunkingOptions = {}
 ): string[] {
-  const { targetTokens, model } = {
+  const { targetTokens, overlapTokens, model } = {
     ...DEFAULT_CHUNKING_OPTIONS,
     ...options,
   };
@@ -182,8 +210,8 @@ export function chunkBySections(
   const matches = Array.from(text.matchAll(sectionPattern));
 
   if (matches.length === 0) {
-    // No sections found, return whole text
-    return [text];
+    // No sections found, fall back to sentence-based chunking
+    return chunkBySentences(text, { targetTokens, overlapTokens, model });
   }
 
   const sections: string[] = [];
@@ -213,14 +241,16 @@ export function chunkBySections(
 
     const sectionTokens = countTokens(section, model);
 
-    // If section is too large, return it as its own chunk (allow 20% overage)
+    // If section is too large, break it down with sentence-based chunking
     if (sectionTokens > targetTokens * 1.2) {
       if (currentChunk.length > 0) {
         chunks.push(currentChunk.join(" "));
         currentChunk = [];
         currentTokens = 0;
       }
-      chunks.push(section);
+      // Break oversized section into smaller chunks
+      const subChunks = chunkBySentences(section, { targetTokens, overlapTokens, model });
+      chunks.push(...subChunks);
     }
     // If adding this section would exceed target, start new chunk
     else if (currentTokens + sectionTokens > targetTokens && currentChunk.length > 0) {

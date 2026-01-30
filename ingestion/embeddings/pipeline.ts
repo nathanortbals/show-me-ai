@@ -184,6 +184,46 @@ export class EmbeddingsPipeline {
         return 0;
       }
 
+      return this.processDocumentFromText(
+        billId,
+        documentId,
+        rawText,
+        contentType,
+        billMetadata
+      );
+    } catch (error) {
+      console.error(`    Unexpected error processing document: ${error}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Process a document from pre-extracted text: clean, chunk, embed, and store.
+   * This is used for inline embedding generation during scraping and for re-processing
+   * from stored text in the database.
+   *
+   * @param billId - Bill UUID
+   * @param documentId - Document UUID (if this is from bill_documents table)
+   * @param rawText - Pre-extracted text from the PDF
+   * @param contentType - Type of content (e.g., "Introduced", "Committee", "Summary")
+   * @param billMetadata - Dictionary with bill metadata (session, sponsors, committees)
+   * @returns Number of embeddings created
+   */
+  async processDocumentFromText(
+    billId: string,
+    documentId: string | undefined,
+    rawText: string,
+    contentType: string,
+    billMetadata: {
+      bill_number: string;
+      session_year: number;
+      session_code: string;
+      primary_sponsor: { id: string; name: string } | null;
+      cosponsors: Array<{ id: string; name: string }>;
+      committees: Array<{ id: string; name: string }>;
+    }
+  ): Promise<number> {
+    try {
       // Clean text
       const cleanText = cleanLegislativeText(rawText);
       console.log(`    Tokens: ${countTokens(cleanText)}`);
@@ -261,6 +301,9 @@ export class EmbeddingsPipeline {
    * Only processes "Introduced" and the most recent version (if different).
    * Automatically excludes fiscal notes.
    *
+   * Prefers using extracted_text from the database (new flow) but falls back
+   * to downloading from Supabase Storage (old flow) for backwards compatibility.
+   *
    * @param billId - Bill UUID
    * @returns Total number of embeddings created
    */
@@ -283,22 +326,38 @@ export class EmbeddingsPipeline {
     let totalEmbeddings = 0;
 
     for (const doc of documents) {
-      if (!doc.storage_path) {
-        console.log(`  Skipping document ${doc.id} - no storage path`);
-        continue;
-      }
-
       try {
-        const embeddings = await this.processDocument(
-          billId,
-          doc.id,
-          doc.storage_path,
-          doc.document_type,
-          billMetadata
-        );
+        let embeddings = 0;
+
+        // Prefer extracted_text from database (new flow)
+        if (doc.extracted_text) {
+          console.log(`  Processing from stored text: ${doc.document_type}`);
+          embeddings = await this.processDocumentFromText(
+            billId,
+            doc.id,
+            doc.extracted_text,
+            doc.document_type,
+            billMetadata
+          );
+        }
+        // Fall back to storage_path (old flow for backwards compatibility)
+        else if (doc.storage_path) {
+          console.log(`  Processing from storage: ${doc.storage_path}`);
+          embeddings = await this.processDocument(
+            billId,
+            doc.id,
+            doc.storage_path,
+            doc.document_type,
+            billMetadata
+          );
+        } else {
+          console.log(`  Skipping document ${doc.id} - no extracted text or storage path`);
+          continue;
+        }
+
         totalEmbeddings += embeddings;
       } catch (error) {
-        console.error(`  ❌ Error processing document ${doc.storage_path}:`, error);
+        console.error(`  ❌ Error processing document ${doc.document_type}:`, error);
         console.log('  Continuing with next document...');
         // Continue with next document
       }

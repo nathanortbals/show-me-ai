@@ -2,7 +2,8 @@
 /**
  * CLI for Show-Me AI ingestion pipeline
  *
- * Provides commands for scraping legislators, bills, and generating embeddings.
+ * Provides commands for scraping legislators and bills.
+ * Text extraction and embedding generation happen inline during bill scraping.
  */
 
 import { config } from 'dotenv';
@@ -23,8 +24,6 @@ process.on('unhandledRejection', (reason, promise) => {
 import { Command } from 'commander';
 import { runLegislatorScraper } from './legislators/scraper';
 import { scrapeBillsForSession } from './bills/scraper';
-import { processSession } from './embeddings/pipeline';
-import { extractTextForSession } from './text-extraction/extractor';
 import { DatabaseClient } from '@/database/client';
 
 // All Missouri House sessions from 2026 to 2000
@@ -163,59 +162,31 @@ program
 // Scrape bills command
 program
   .command('scrape-bills')
-  .description('Scrape bills for a session')
+  .description('Scrape bills for a session (includes PDF text extraction and embedding generation)')
   .option('--year <year>', 'Session year', '2026')
   .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
+  .option('--force', 'Re-process bills that already have extracted text', false)
   .action(async (options) => {
     const year = parseInt(options.year);
     const sessionCode = options.sessionCode;
+    const force = options.force;
 
     console.log(`\n${'='.repeat(80)}`);
     console.log(`SCRAPING BILLS: ${year} ${sessionCode}`);
     console.log('='.repeat(80));
+    console.log('Note: PDFs are downloaded, text is extracted, and embeddings are generated inline.');
+    console.log('      PDFs are NOT uploaded to Supabase Storage.');
+    if (!force) {
+      console.log('      Bills with existing extracted text will be skipped (use --force to re-process).\n');
+    } else {
+      console.log('      --force enabled: All bills will be re-processed.\n');
+    }
 
     try {
-      await scrapeBillsForSession({ year, sessionCode });
+      await scrapeBillsForSession({ year, sessionCode, force });
       console.log('\n✅ Bills scraping complete');
     } catch (error) {
       console.error('\n❌ Failed to scrape bills:', error);
-      process.exit(1);
-    }
-  });
-
-// Generate embeddings command
-program
-  .command('generate-embeddings')
-  .description('Generate embeddings for bills in a session')
-  .option('--year <year>', 'Session year', '2026')
-  .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
-  .option('--force', 'Re-generate embeddings for bills that already have them', false)
-  .action(async (options) => {
-    const year = parseInt(options.year);
-    const sessionCode = options.sessionCode;
-    const skipEmbedded = !options.force;
-
-    console.log(`\n${'='.repeat(80)}`);
-    console.log(`GENERATING EMBEDDINGS: ${year} ${sessionCode}`);
-    console.log('='.repeat(80));
-    console.log(`Skip already embedded bills: ${skipEmbedded}`);
-
-    try {
-      const db = new DatabaseClient();
-      const sessionId = await db.getOrCreateSession(year, sessionCode);
-      console.log(`Session ID: ${sessionId}`);
-
-      const result = await processSession(sessionId, undefined, skipEmbedded);
-
-      console.log('\n✅ Embeddings generation complete');
-      console.log(`   Bills processed: ${result.billsProcessed}`);
-      console.log(`   Embeddings created: ${result.totalEmbeddings}`);
-      if (result.billsProcessed > 0) {
-        const avg = result.totalEmbeddings / result.billsProcessed;
-        console.log(`   Average per bill: ${avg.toFixed(1)}`);
-      }
-    } catch (error) {
-      console.error('\n❌ Failed to generate embeddings:', error);
       process.exit(1);
     }
   });
@@ -277,185 +248,6 @@ program
     console.log('='.repeat(80));
     console.log(`Sessions processed: ${stats.sessionsProcessed}/${sessionsToProcess.length}`);
     console.log(`Sessions failed: ${stats.sessionsFailed}`);
-    console.log('='.repeat(80));
-  });
-
-// Generate all embeddings command
-program
-  .command('generate-all-embeddings')
-  .description('Generate embeddings for all sessions from 2026 to 2000')
-  .option('--start-year <year>', 'Start from a specific year and work backwards', '2026')
-  .option('--force', 'Re-generate embeddings for bills that already have them', false)
-  .action(async (options) => {
-    const startYear = parseInt(options.startYear);
-    const skipEmbedded = !options.force;
-
-    // Filter sessions to start from specified year
-    const sessionsToProcess = SESSIONS.filter(s => s.year <= startYear);
-
-    console.log('='.repeat(80));
-    console.log(`MISSOURI HOUSE EMBEDDINGS GENERATOR - SESSIONS (${startYear}-2000)`);
-    console.log('='.repeat(80));
-    console.log(`\nTotal sessions to process: ${sessionsToProcess.length}`);
-    console.log(`Skip already embedded bills: ${skipEmbedded}`);
-    console.log('\nThis will:');
-    console.log('- Extract text from bill PDFs in Supabase Storage');
-    console.log("- Filter to 'Introduced' + most recent version (excludes fiscal notes)");
-    console.log('- Chunk using section-based or sentence-based strategies');
-    console.log('- Generate embeddings via OpenAI text-embedding-3-small');
-    console.log('- Store with comprehensive metadata (sponsors, committees, session info)');
-
-    const db = new DatabaseClient();
-
-    const stats = {
-      sessionsProcessed: 0,
-      sessionsFailed: 0,
-      totalBillsProcessed: 0,
-      totalEmbeddingsCreated: 0,
-    };
-
-    for (const { year, sessionCode, description } of sessionsToProcess) {
-      try {
-        console.log(`\n${'='.repeat(80)}`);
-        console.log(`GENERATING EMBEDDINGS: ${description}`);
-        console.log('='.repeat(80));
-
-        const sessionId = await db.getOrCreateSession(year, sessionCode);
-        console.log(`Session ID: ${sessionId}`);
-
-        const result = await processSession(sessionId, undefined, skipEmbedded);
-
-        if (result.billsProcessed === 0) {
-          console.log(`⚠️  No bills found for ${description}`);
-          stats.sessionsFailed++;
-        } else {
-          console.log(`\n✅ Embeddings complete for ${description}`);
-          console.log(`   Bills processed: ${result.billsProcessed}`);
-          console.log(`   Embeddings created: ${result.totalEmbeddings}`);
-          const avg = result.totalEmbeddings / result.billsProcessed;
-          console.log(`   Average per bill: ${avg.toFixed(1)}`);
-
-          stats.sessionsProcessed++;
-          stats.totalBillsProcessed += result.billsProcessed;
-          stats.totalEmbeddingsCreated += result.totalEmbeddings;
-        }
-      } catch (error) {
-        console.error(`\n❌ FATAL ERROR processing ${description}:`, error);
-        stats.sessionsFailed++;
-        continue;
-      }
-    }
-
-    // Print final summary
-    console.log('\n' + '='.repeat(80));
-    console.log('FINAL SUMMARY');
-    console.log('='.repeat(80));
-    console.log(`Sessions processed: ${stats.sessionsProcessed}/${sessionsToProcess.length}`);
-    console.log(`Sessions failed/empty: ${stats.sessionsFailed}`);
-    console.log(`\nBills processed: ${stats.totalBillsProcessed}`);
-    console.log(`Total embeddings created: ${stats.totalEmbeddingsCreated}`);
-    if (stats.totalBillsProcessed > 0) {
-      const avg = stats.totalEmbeddingsCreated / stats.totalBillsProcessed;
-      console.log(`Average embeddings per bill: ${avg.toFixed(1)}`);
-    }
-    console.log('='.repeat(80));
-  });
-
-// Extract text from bill documents command
-program
-  .command('extract-text')
-  .description('Extract full text from bill document PDFs for a session')
-  .option('--year <year>', 'Session year', '2026')
-  .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
-  .option('--force', 'Re-extract text for documents that already have it', false)
-  .action(async (options) => {
-    const year = parseInt(options.year);
-    const sessionCode = options.sessionCode;
-    const skipExtracted = !options.force;
-
-    console.log(`\n${'='.repeat(80)}`);
-    console.log(`EXTRACTING TEXT: ${year} ${sessionCode}`);
-    console.log('='.repeat(80));
-    console.log(`Skip already extracted: ${skipExtracted}\n`);
-
-    const db = new DatabaseClient();
-
-    try {
-      const sessionId = await db.getOrCreateSession(year, sessionCode);
-      console.log(`Session ID: ${sessionId}`);
-
-      const result = await extractTextForSession(sessionId, skipExtracted);
-
-      console.log('\n✅ Text extraction complete');
-      console.log(`   Documents processed: ${result.documentsProcessed}`);
-      console.log(`   Succeeded: ${result.documentsSucceeded}`);
-      console.log(`   Failed: ${result.documentsFailed}`);
-    } catch (error) {
-      console.error('\n❌ Failed to extract text:', error);
-      process.exit(1);
-    }
-  });
-
-// Extract text for all sessions command
-program
-  .command('extract-all-text')
-  .description('Extract text from all bill documents (2026-2000)')
-  .option('--start-year <year>', 'Start from a specific year and work backwards', '2026')
-  .option('--force', 'Re-extract text for documents that already have it', false)
-  .action(async (options) => {
-    const startYear = parseInt(options.startYear);
-    const skipExtracted = !options.force;
-
-    // Filter sessions to start from specified year
-    const sessionsToProcess = SESSIONS.filter(s => s.year <= startYear);
-
-    console.log('='.repeat(80));
-    console.log(`TEXT EXTRACTION - SESSIONS (${startYear}-2000)`);
-    console.log('='.repeat(80));
-    console.log(`\nTotal sessions to process: ${sessionsToProcess.length}`);
-    console.log(`Skip already extracted: ${skipExtracted}\n`);
-
-    const db = new DatabaseClient();
-
-    const stats = {
-      sessionsProcessed: 0,
-      sessionsFailed: 0,
-      totalDocumentsProcessed: 0,
-      totalDocumentsSucceeded: 0,
-      totalDocumentsFailed: 0,
-    };
-
-    for (const { year, sessionCode, description } of sessionsToProcess) {
-      try {
-        console.log(`\n${'='.repeat(80)}`);
-        console.log(`EXTRACTING TEXT: ${description}`);
-        console.log('='.repeat(80));
-
-        const sessionId = await db.getOrCreateSession(year, sessionCode);
-        const result = await extractTextForSession(sessionId, skipExtracted);
-
-        stats.sessionsProcessed++;
-        stats.totalDocumentsProcessed += result.documentsProcessed;
-        stats.totalDocumentsSucceeded += result.documentsSucceeded;
-        stats.totalDocumentsFailed += result.documentsFailed;
-
-        console.log(`\n✓ Session complete: ${result.documentsSucceeded}/${result.documentsProcessed} succeeded`);
-      } catch (error) {
-        console.error(`\n❌ FATAL ERROR processing ${description}:`, error);
-        stats.sessionsFailed++;
-        continue;
-      }
-    }
-
-    // Print final summary
-    console.log('\n' + '='.repeat(80));
-    console.log('FINAL SUMMARY');
-    console.log('='.repeat(80));
-    console.log(`Sessions processed: ${stats.sessionsProcessed}/${sessionsToProcess.length}`);
-    console.log(`Sessions failed: ${stats.sessionsFailed}`);
-    console.log(`\nDocuments processed: ${stats.totalDocumentsProcessed}`);
-    console.log(`Documents succeeded: ${stats.totalDocumentsSucceeded}`);
-    console.log(`Documents failed: ${stats.totalDocumentsFailed}`);
     console.log('='.repeat(80));
   });
 

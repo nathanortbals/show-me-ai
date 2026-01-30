@@ -50,11 +50,15 @@ export type HearingData = Omit<
 
 /**
  * Document data for bill insertion (without bill_id, added during insertion)
+ * Note: storage_path is nullable (PDFs are now processed in-memory, not stored)
+ * Note: extracted_text is optional (populated during scraping for embedding generation)
  */
 export type DocumentData = Omit<
   Database['public']['Tables']['bill_documents']['Insert'],
   'bill_id' | 'id' | 'created_at'
->;
+> & {
+  extracted_text?: string | null;
+};
 
 /**
  * Nested query result types
@@ -594,6 +598,7 @@ export class DatabaseClient {
               document_type: doc.document_type,
               document_url: doc.document_url,
               storage_path: doc.storage_path || null,
+              extracted_text: doc.extracted_text || null,
             });
           } catch (error) {
             console.warn(`Warning: Could not insert document: ${error}`);
@@ -645,6 +650,55 @@ export class DatabaseClient {
   }
 
   /**
+   * Check if a bill already has documents with extracted text.
+   *
+   * @param billId - Bill UUID
+   * @returns True if bill has at least one document with extracted_text
+   */
+  async billHasExtractedText(billId: string): Promise<boolean> {
+    try {
+      const { data, error } = await this._client
+        .from('bill_documents')
+        .select('id')
+        .eq('bill_id', billId)
+        .not('extracted_text', 'is', null)
+        .limit(1);
+
+      if (error) throw error;
+
+      return (data && data.length > 0) || false;
+    } catch (error) {
+      console.error(`Failed to check bill documents: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Check if a bill exists by bill number and session.
+   *
+   * @param billNumber - Bill number (e.g., "HB 1366")
+   * @param sessionId - Session UUID
+   * @returns Bill ID if exists, null otherwise
+   */
+  async getBillIdByNumber(billNumber: string, sessionId: string): Promise<string | null> {
+    try {
+      const { data, error } = await this._client
+        .from('bills')
+        .select('id')
+        .eq('bill_number', billNumber)
+        .eq('session_id', sessionId)
+        .limit(1);
+
+      if (error) throw error;
+
+      return data && data.length > 0 ? data[0].id : null;
+    } catch (error) {
+      console.error(`Failed to get bill ID: ${error}`);
+      return null;
+    }
+  }
+
+  /**
    * Get all documents for a specific bill.
    *
    * @param billId - Bill UUID
@@ -686,9 +740,12 @@ export class DatabaseClient {
       const allDocs = await this.getBillDocuments(billId);
 
       // Filter out fiscal notes (contain .ORG in storage path or document type)
-      const legislativeDocs = allDocs.filter(
-        (doc) => doc.storage_path && !doc.storage_path.includes('.ORG')
-      );
+      // Include documents with either storage_path or extracted_text (new flow doesn't use storage)
+      const legislativeDocs = allDocs.filter((doc) => {
+        const hasContent = doc.storage_path || doc.extracted_text;
+        const isFiscalNote = doc.storage_path?.includes('.ORG') || doc.document_url?.includes('.ORG');
+        return hasContent && !isFiscalNote;
+      });
 
       if (legislativeDocs.length === 0) {
         return [];

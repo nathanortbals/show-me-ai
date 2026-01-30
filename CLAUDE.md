@@ -29,7 +29,7 @@ Show-Me AI is an AI-powered chatbot for querying Missouri House of Representativ
 3. **Storage Layer** (Supabase)
    - PostgreSQL with pgvector extension
    - Session-based schema (see DATABASE_SCHEMA.md)
-   - Supabase Storage for bill PDFs
+   - Bill PDF text is extracted during scraping and stored in the database (no Supabase Storage)
 
 ### Key Architectural Patterns
 
@@ -39,7 +39,7 @@ Show-Me AI is an AI-powered chatbot for querying Missouri House of Representativ
 
 **Smart Chunking**: Legislative text uses section-based chunking (keeps "Section A" together). Summaries use sentence-based chunking with overlap. See `ingestion/embeddings/chunking.ts`.
 
-**Embeddings Tracking**: Bills have `embeddings_generated` and `embeddings_generated_at` fields to prevent duplicates. Always use `--skip-embedded` when re-running embeddings unless you want to regenerate.
+**Inline Processing**: Text extraction and embedding generation happen during bill scraping (single pass). Bills with existing extracted text are skipped unless `--force` is used.
 
 ## Common Commands
 
@@ -68,24 +68,9 @@ npm run ingest:bills -- --year 2026
 npm run ingest:all
 ```
 
-### Embeddings
-
-**Single session:**
+**Re-process existing bills (force re-extraction and re-embedding):**
 ```bash
-# Generate embeddings for one session
-npm run ingest:embeddings -- --year 2026 --session-code R
-
-# Skip bills that already have embeddings (default behavior)
-npm run ingest:embeddings -- --year 2026 --session-code R --skip-embedded
-```
-
-**All sessions:**
-```bash
-# Process all sessions (skips already-embedded bills by default)
-npm run ingest:embeddings:all
-
-# Force re-generation even for bills with existing embeddings
-npm run ingest:embeddings:all -- --force
+npm run ingest:bills -- --year 2026 --force
 ```
 
 ### Next.js App & AI Agent
@@ -119,11 +104,9 @@ Migrations must be run manually in Supabase SQL Editor. See `database/migrations
 
 ### `ingestion/cli.ts`
 Command-line interface for all ingestion operations. Provides commands for:
-- `legislators` - Scrape legislators for a session
-- `bills` - Scrape bills for a session
-- `all` - Scrape all sessions (legislators then bills)
-- `embeddings` - Generate embeddings for a session
-- `embeddings:all` - Generate embeddings for all sessions
+- `scrape-legislators` - Scrape legislators for a session
+- `scrape-bills` - Scrape bills, extract text, and generate embeddings (use `--force` to re-process)
+- `scrape-all` - Scrape all sessions (legislators then bills)
 
 ### `ingestion/database/client.ts`
 Central database client class. All database operations go through this. Key methods:
@@ -251,8 +234,6 @@ This prevents duplicate content and focuses on substantive legislative text.
 
 **Playwright Context**: Scrapers use async context managers in TypeScript. Always use proper async/await patterns.
 
-**Supabase Storage URLs**: Must have trailing slash or you'll get warnings.
-
 **LangChain Tool Functions**: Tools must be standalone functions (not class methods) when using LangChain's `tool()` decorator. Use singleton pattern for shared state if needed.
 
 **TypeScript Async/Await**: All database operations and scraping functions are async. Always await promises and handle errors appropriately.
@@ -268,9 +249,7 @@ This project uses **npm** as a TypeScript monorepo. All commands should use `npm
 
 **Common npm scripts:**
 - `npm run ingest:legislators` - Scrape legislators
-- `npm run ingest:bills` - Scrape bills
+- `npm run ingest:bills` - Scrape bills (includes text extraction and embedding generation)
 - `npm run ingest:all` - Scrape all sessions
-- `npm run ingest:embeddings` - Generate embeddings
-- `npm run ingest:embeddings:all` - Generate all embeddings
 - `npm run dev` - Start Next.js dev server (from app/ directory)
 - `npm run build` - Build Next.js app (from app/ directory)
