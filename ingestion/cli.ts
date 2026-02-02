@@ -22,8 +22,11 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 import { Command } from 'commander';
+import { chromium } from 'playwright';
 import { scrapeBillsForSession } from './house/scraper';
 import { scrapeSenateBillsForSession } from './senate/scraper';
+import { scrapeBillList } from './house/bills';
+import { scrapeSendBillList } from './senate/bills';
 import { DatabaseClient } from '@/database/client';
 
 // All Missouri House sessions from 2026 to 2000
@@ -136,6 +139,28 @@ program
   .description('Show-Me AI ingestion tools')
   .version('0.1.0');
 
+// List House bills command (outputs JSON array of bill numbers)
+program
+  .command('list-house-bills')
+  .description('List all bill numbers for a House session (outputs JSON)')
+  .option('--year <year>', 'Session year', '2026')
+  .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
+  .action(async (options) => {
+    const year = parseInt(options.year);
+    const sessionCode = options.sessionCode;
+
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+
+    try {
+      const bills = await scrapeBillList(page, year, sessionCode);
+      const billNumbers = bills.map(b => b.bill_number);
+      console.log(JSON.stringify(billNumbers));
+    } finally {
+      await browser.close();
+    }
+  });
+
 // Scrape House command (legislators + bills)
 program
   .command('scrape-house')
@@ -143,14 +168,21 @@ program
   .option('--year <year>', 'Session year', '2026')
   .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
   .option('--force', 'Re-process bills that already have extracted text', false)
+  .option('--bills <bills>', 'Comma-separated list of bill numbers to process')
+  .option('--skip-legislators', 'Skip legislator scraping (use when legislators already exist)', false)
   .action(async (options) => {
     const year = parseInt(options.year);
     const sessionCode = options.sessionCode;
     const force = options.force;
+    const bills = options.bills ? options.bills.split(',').map((b: string) => b.trim()) : undefined;
+    const skipLegislators = options.skipLegislators;
 
     console.log(`\n${'='.repeat(80)}`);
-    console.log(`SCRAPING HOUSE LEGISLATORS & BILLS: ${year} ${sessionCode}`);
+    console.log(`SCRAPING HOUSE${skipLegislators ? ' BILLS' : ' LEGISLATORS & BILLS'}: ${year} ${sessionCode}`);
     console.log('='.repeat(80));
+    if (bills) {
+      console.log(`Processing ${bills.length} specific bill(s): ${bills.slice(0, 5).join(', ')}${bills.length > 5 ? '...' : ''}`);
+    }
     if (!force) {
       console.log('Bills with existing extracted text will be skipped (use --force to re-process).\n');
     } else {
@@ -158,11 +190,33 @@ program
     }
 
     try {
-      await scrapeBillsForSession({ year, sessionCode, force });
-      console.log('\n✅ House legislators & bills scraping complete');
+      await scrapeBillsForSession({ year, sessionCode, force, bills, skipLegislators });
+      console.log('\n✅ House scraping complete');
     } catch (error) {
       console.error('\n❌ Failed to scrape bills:', error);
       process.exit(1);
+    }
+  });
+
+// List Senate bills command (outputs JSON array of bill numbers)
+program
+  .command('list-senate-bills')
+  .description('List all bill numbers for a Senate session (outputs JSON)')
+  .option('--year <year>', 'Session year', '2026')
+  .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
+  .action(async (options) => {
+    const year = parseInt(options.year);
+    const sessionCode = options.sessionCode;
+
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+
+    try {
+      const bills = await scrapeSendBillList(page, year, sessionCode);
+      const billNumbers = bills.map(b => b.bill_number);
+      console.log(JSON.stringify(billNumbers));
+    } finally {
+      await browser.close();
     }
   });
 
@@ -174,15 +228,22 @@ program
   .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
   .option('--limit <limit>', 'Limit number of bills to process')
   .option('--force', 'Re-process bills that already have extracted text', false)
+  .option('--bills <bills>', 'Comma-separated list of bill numbers to process')
+  .option('--skip-legislators', 'Skip legislator scraping (use when legislators already exist)', false)
   .action(async (options) => {
     const year = parseInt(options.year);
     const sessionCode = options.sessionCode;
     const force = options.force;
     const limit = options.limit ? parseInt(options.limit) : undefined;
+    const bills = options.bills ? options.bills.split(',').map((b: string) => b.trim()) : undefined;
+    const skipLegislators = options.skipLegislators;
 
     console.log(`\n${'='.repeat(80)}`);
-    console.log(`SCRAPING SENATE: ${year} ${sessionCode}`);
+    console.log(`SCRAPING SENATE${skipLegislators ? ' BILLS' : ''}: ${year} ${sessionCode}`);
     console.log('='.repeat(80));
+    if (bills) {
+      console.log(`Processing ${bills.length} specific bill(s): ${bills.slice(0, 5).join(', ')}${bills.length > 5 ? '...' : ''}`);
+    }
     if (!force) {
       console.log('Bills with existing extracted text will be skipped (use --force to re-process).\n');
     } else {
@@ -190,7 +251,7 @@ program
     }
 
     try {
-      await scrapeSenateBillsForSession({ year, sessionCode, force, limit });
+      await scrapeSenateBillsForSession({ year, sessionCode, force, limit, bills, skipLegislators });
       console.log('\n✅ Senate scraping complete');
     } catch (error) {
       console.error('\n❌ Failed to scrape Senate:', error);

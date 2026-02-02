@@ -1,0 +1,129 @@
+name: Daily House Scrape
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC (midnight CST / 1 AM CDT)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      year:
+        description: 'Session year (defaults to current year)'
+        required: false
+        type: string
+      session_code:
+        description: 'Session code'
+        required: false
+        default: 'R'
+        type: choice
+        options:
+          - R
+          - S1
+          - S2
+
+jobs:
+  # Setup job: Scrape legislators and create bill matrix
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      session_year: ${{ steps.set-year.outputs.session_year }}
+      session_code: ${{ steps.set-year.outputs.session_code }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set session year and code
+        id: set-year
+        run: |
+          if [ -z "${{ inputs.year }}" ]; then
+            echo "session_year=$(date +%Y)" >> $GITHUB_OUTPUT
+          else
+            echo "session_year=${{ inputs.year }}" >> $GITHUB_OUTPUT
+          fi
+          echo "session_code=${{ inputs.session_code || 'R' }}" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Scrape legislators
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "Scraping House legislators for ${{ steps.set-year.outputs.session_year }} ${{ steps.set-year.outputs.session_code }}"
+          # Run with --bills "" to scrape only legislators (no bills will match empty filter)
+          npm run ingest:house -- --year ${{ steps.set-year.outputs.session_year }} --session-code ${{ steps.set-year.outputs.session_code }} --bills ""
+
+      - name: Get bill list and create matrix
+        id: set-matrix
+        run: |
+          echo "Fetching House bill list..."
+          BILLS=$(npx tsx ingestion/cli.ts list-house-bills --year ${{ steps.set-year.outputs.session_year }} --session-code ${{ steps.set-year.outputs.session_code }})
+          echo "Found $(echo $BILLS | jq length) bills"
+
+          # Split into chunks of 20 and create matrix
+          MATRIX=$(echo $BILLS | jq -c '
+            . as $bills |
+            ($bills | length) as $total |
+            [range(0; $total; 20)] |
+            to_entries |
+            map({
+              chunk: .key,
+              bills: ($bills[.value:.value+20] | join(","))
+            })
+          ')
+
+          echo "Created $(echo $MATRIX | jq length) chunks"
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
+  # Matrix job: Process bill chunks in parallel
+  scrape-bills:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include: ${{ fromJson(needs.setup.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Scrape bills (chunk ${{ matrix.chunk }})
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          echo "Processing chunk ${{ matrix.chunk }}"
+          echo "Bills: ${{ matrix.bills }}"
+          npm run ingest:house -- \
+            --year ${{ needs.setup.outputs.session_year }} \
+            --session-code ${{ needs.setup.outputs.session_code }} \
+            --skip-legislators \
+            --bills "${{ matrix.bills }}"

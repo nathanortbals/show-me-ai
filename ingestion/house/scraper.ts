@@ -272,11 +272,11 @@ class MoHouseBillScraper {
  * Scrape House bills for a session.
  *
  * Process:
- * 1. Scrape legislators and insert into database
+ * 1. Scrape legislators and insert into database (unless skipLegislators is true)
  * 2. Scrape bill list
  * 3. For each bill: scrape details → download PDFs → extract text → DB → embeddings
  *
- * @param options - Scraper options (year, sessionCode, limit, pdfDir, force)
+ * @param options - Scraper options (year, sessionCode, limit, pdfDir, force, bills, skipLegislators)
  * @param db - Optional database instance (creates one if not provided)
  */
 export async function scrapeBillsForSession(
@@ -286,14 +286,15 @@ export async function scrapeBillsForSession(
     limit?: number;
     pdfDir?: string;
     force?: boolean;
+    bills?: string[];
+    skipLegislators?: boolean;
   } = {},
   db?: DatabaseClient
 ): Promise<void> {
-  const { year, sessionCode = 'R', limit, pdfDir = 'bill_pdfs', force = false } = options;
+  const { year, sessionCode = 'R', limit, pdfDir = 'bill_pdfs', force = false, bills: billFilter, skipLegislators = false } = options;
 
   const database = db || new DatabaseClient();
   const scraper = new MoHouseBillScraper(year, sessionCode, database);
-  const legislatorScraper = new MoLegislatorScraper(year || null, sessionCode, database);
 
   let processedCount = 0;
   let skippedCount = 0;
@@ -301,76 +302,89 @@ export async function scrapeBillsForSession(
 
   try {
     await scraper.start();
-    await legislatorScraper.start();
 
     const sessionId = await scraper.getOrCreateSession();
     const sessionYear = year || 2026;
     console.log(`Session: ${sessionYear} ${sessionCode} (ID: ${sessionId})\n`);
 
-    // Step 1: Scrape legislators
-    console.log('Step 1: Scraping legislators...');
-    const legislators = await legislatorScraper.scrapeLegislatorList();
+    // Step 1: Scrape legislators (unless skipped)
+    if (!skipLegislators) {
+      const legislatorScraper = new MoLegislatorScraper(year || null, sessionCode, database);
+      await legislatorScraper.start();
 
-    if (!legislators || legislators.length === 0) {
-      console.log('No legislators found!');
-    } else {
-      console.log(`Found ${legislators.length} legislators`);
-      let insertedCount = 0;
-      let updatedCount = 0;
+      console.log('Step 1: Scraping legislators...');
+      const legislators = await legislatorScraper.scrapeLegislatorList();
 
-      for (let i = 0; i < legislators.length; i++) {
-        const legislator = legislators[i];
-        try {
-          const details = await legislatorScraper.scrapeLegislatorDetails(legislator.profile_url);
+      if (!legislators || legislators.length === 0) {
+        console.log('No legislators found!');
+      } else {
+        console.log(`Found ${legislators.length} legislators`);
+        let insertedCount = 0;
+        let updatedCount = 0;
 
-          // Skip vacant districts
-          if (!details.legislator_type) {
-            continue;
+        for (let i = 0; i < legislators.length; i++) {
+          const legislator = legislators[i];
+          try {
+            const details = await legislatorScraper.scrapeLegislatorDetails(legislator.profile_url);
+
+            // Skip vacant districts
+            if (!details.legislator_type) {
+              continue;
+            }
+
+            const yearElected = details.year_elected ? parseInt(details.year_elected, 10) : undefined;
+            const yearsServed = details.years_served ? parseInt(details.years_served, 10) : undefined;
+
+            const [legislatorId, wasUpdated] = await database.upsertLegislator({
+              name: details.name,
+              legislator_type: details.legislator_type,
+              party_affiliation: details.party_affiliation,
+              year_elected: yearElected,
+              years_served: yearsServed,
+              picture_url: details.picture_url,
+              is_active: details.is_active,
+              profile_url: details.profile_url,
+            });
+
+            const district = details.district || legislator.district;
+            await database.linkLegislatorToSession(sessionId, legislatorId, district);
+
+            if (wasUpdated) {
+              updatedCount++;
+            } else {
+              insertedCount++;
+            }
+          } catch (e) {
+            // Silently continue on individual legislator errors
           }
-
-          const yearElected = details.year_elected ? parseInt(details.year_elected, 10) : undefined;
-          const yearsServed = details.years_served ? parseInt(details.years_served, 10) : undefined;
-
-          const [legislatorId, wasUpdated] = await database.upsertLegislator({
-            name: details.name,
-            legislator_type: details.legislator_type,
-            party_affiliation: details.party_affiliation,
-            year_elected: yearElected,
-            years_served: yearsServed,
-            picture_url: details.picture_url,
-            is_active: details.is_active,
-            profile_url: details.profile_url,
-          });
-
-          const district = details.district || legislator.district;
-          await database.linkLegislatorToSession(sessionId, legislatorId, district);
-
-          if (wasUpdated) {
-            updatedCount++;
-          } else {
-            insertedCount++;
-          }
-        } catch (e) {
-          // Silently continue on individual legislator errors
         }
+
+        console.log(`  ✓ Inserted: ${insertedCount}, Updated: ${updatedCount}`);
       }
 
-      console.log(`  ✓ Inserted: ${insertedCount}, Updated: ${updatedCount}`);
+      // Close legislator scraper browser
+      await legislatorScraper.close();
+    } else {
+      console.log('Step 1: Skipping legislators (--skip-legislators flag set)');
     }
-
-    // Close legislator scraper browser
-    await legislatorScraper.close();
 
     // Step 2: Get bill list
     console.log('\nStep 2: Fetching bill list...');
     const page = scraper.getPage();
-    const bills = await scrapeBillList(page, year, sessionCode);
+    let bills = await scrapeBillList(page, year, sessionCode);
 
     if (!bills || bills.length === 0) {
       console.log('No bills found!');
       return;
     }
     console.log(`Found ${bills.length} bills`);
+
+    // Filter to specific bills if provided
+    if (billFilter && billFilter.length > 0) {
+      const billFilterSet = new Set(billFilter.map(b => b.toUpperCase().replace(/\s+/g, ' ')));
+      bills = bills.filter(b => billFilterSet.has(b.bill_number.toUpperCase().replace(/\s+/g, ' ')));
+      console.log(`Filtered to ${bills.length} bills matching --bills filter`);
+    }
 
     // Step 3: Process bills
     const billsToProcess = limit ? bills.slice(0, limit) : bills;

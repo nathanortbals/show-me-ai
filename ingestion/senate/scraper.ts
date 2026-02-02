@@ -247,7 +247,7 @@ class MoSenateBillScraper {
  *
  * Processes each bill sequentially: scrape → download PDFs → extract text → DB → embeddings.
  *
- * @param options - Scraper options (year, sessionCode, limit, pdfDir, force)
+ * @param options - Scraper options (year, sessionCode, limit, pdfDir, force, bills, skipLegislators)
  * @param db - Optional database instance (creates one if not provided)
  */
 export async function scrapeSenateBillsForSession(
@@ -257,6 +257,8 @@ export async function scrapeSenateBillsForSession(
     limit?: number;
     pdfDir?: string;
     force?: boolean;
+    bills?: string[];
+    skipLegislators?: boolean;
   } = {},
   db?: DatabaseClient
 ): Promise<void> {
@@ -266,6 +268,8 @@ export async function scrapeSenateBillsForSession(
     limit,
     pdfDir = 'bill_pdfs',
     force = false,
+    bills: billFilter,
+    skipLegislators = false,
   } = options;
 
   const database = db || new DatabaseClient();
@@ -294,77 +298,89 @@ export async function scrapeSenateBillsForSession(
 
     console.log(`Found ${bills.length} bills`);
 
-    // Step 2: Scrape and insert senator profiles
-    let enhancedBills: EnhancedSenateBillListItem[] = bills;
+    // Filter to specific bills if provided
+    let filteredBills = bills;
+    if (billFilter && billFilter.length > 0) {
+      const billFilterSet = new Set(billFilter.map(b => b.toUpperCase().replace(/\s+/g, ' ')));
+      filteredBills = bills.filter(b => billFilterSet.has(b.bill_number.toUpperCase().replace(/\s+/g, ' ')));
+      console.log(`Filtered to ${filteredBills.length} bills matching --bills filter`);
+    }
 
-    console.log('\nStep 2: Fetching senator profiles...');
+    // Step 2: Scrape and insert senator profiles (unless skipped)
+    let enhancedBills: EnhancedSenateBillListItem[] = filteredBills;
 
-    // Get unique senator IDs
-    const uniqueSenatorIds = [...new Set(bills.map((b) => b.senator_id).filter(Boolean))];
-    console.log(`Found ${uniqueSenatorIds.length} unique senators to scrape`);
+    if (!skipLegislators) {
+      console.log('\nStep 2: Fetching senator profiles...');
 
-    const senatorProfiles = new Map<string, SenatorProfile>();
+      // Get unique senator IDs from filtered bills
+      const uniqueSenatorIds = [...new Set(filteredBills.map((b) => b.senator_id).filter(Boolean))];
+      console.log(`Found ${uniqueSenatorIds.length} unique senators to scrape`);
 
-    for (let i = 0; i < uniqueSenatorIds.length; i++) {
-      const senatorId = uniqueSenatorIds[i]!;
-      let retries = 3;
-      while (retries > 0) {
-        try {
-          console.log(`  [${i + 1}/${uniqueSenatorIds.length}] Scraping senator ${senatorId}...`);
-          const profile = await scraper.getSenatorProfile(senatorId);
-          senatorProfiles.set(senatorId, profile);
-          console.log(`    ${profile.name} (District ${profile.district})`);
-          break; // Success, exit retry loop
-        } catch (e) {
-          retries--;
-          if (retries > 0) {
-            console.log(`    Retry (${3 - retries}/3) after error: ${e}`);
-            await new Promise((r) => setTimeout(r, 2000)); // Wait 2s before retry
-          } else {
-            console.log(`    Failed after 3 attempts: ${e}`);
+      const senatorProfiles = new Map<string, SenatorProfile>();
+
+      for (let i = 0; i < uniqueSenatorIds.length; i++) {
+        const senatorId = uniqueSenatorIds[i]!;
+        let retries = 3;
+        while (retries > 0) {
+          try {
+            console.log(`  [${i + 1}/${uniqueSenatorIds.length}] Scraping senator ${senatorId}...`);
+            const profile = await scraper.getSenatorProfile(senatorId);
+            senatorProfiles.set(senatorId, profile);
+            console.log(`    ${profile.name} (District ${profile.district})`);
+            break; // Success, exit retry loop
+          } catch (e) {
+            retries--;
+            if (retries > 0) {
+              console.log(`    Retry (${3 - retries}/3) after error: ${e}`);
+              await new Promise((r) => setTimeout(r, 2000)); // Wait 2s before retry
+            } else {
+              console.log(`    Failed after 3 attempts: ${e}`);
+            }
           }
         }
       }
-    }
 
-    // Insert senators into database
-    console.log('\n  Inserting senators into database...');
-    let insertedCount = 0;
-    let updatedCount = 0;
+      // Insert senators into database
+      console.log('\n  Inserting senators into database...');
+      let insertedCount = 0;
+      let updatedCount = 0;
 
-    for (const profile of senatorProfiles.values()) {
-      try {
-        // Upsert legislator to database
-        const [legislatorId, wasUpdated] = await database.upsertLegislator({
-          name: profile.name,
-          legislator_type: 'Senator',
-          party_affiliation: profile.party || null,
-          year_elected: profile.year_elected || null,
-          picture_url: profile.photo_url || null,
-          is_active: true,
-          profile_url: profile.profile_url,
-        });
+      for (const profile of senatorProfiles.values()) {
+        try {
+          // Upsert legislator to database
+          const [legislatorId, wasUpdated] = await database.upsertLegislator({
+            name: profile.name,
+            legislator_type: 'Senator',
+            party_affiliation: profile.party || null,
+            year_elected: profile.year_elected || null,
+            picture_url: profile.photo_url || null,
+            is_active: true,
+            profile_url: profile.profile_url,
+          });
 
-        // Link to session
-        await database.linkLegislatorToSession(sessionId, legislatorId, profile.district);
+          // Link to session
+          await database.linkLegislatorToSession(sessionId, legislatorId, profile.district);
 
-        if (wasUpdated) {
-          updatedCount++;
-        } else {
-          insertedCount++;
+          if (wasUpdated) {
+            updatedCount++;
+          } else {
+            insertedCount++;
+          }
+        } catch (e) {
+          console.log(`    Warning: Failed to insert senator ${profile.name}: ${e}`);
         }
-      } catch (e) {
-        console.log(`    Warning: Failed to insert senator ${profile.name}: ${e}`);
       }
+
+      console.log(`  ✓ Inserted: ${insertedCount}, Updated: ${updatedCount}`);
+
+      // Enhance bills with senator profiles
+      enhancedBills = filteredBills.map((bill) => ({
+        ...bill,
+        senator_profile: bill.senator_id ? senatorProfiles.get(bill.senator_id) : undefined,
+      }));
+    } else {
+      console.log('\nStep 2: Skipping legislators (--skip-legislators flag set)');
     }
-
-    console.log(`  ✓ Inserted: ${insertedCount}, Updated: ${updatedCount}`);
-
-    // Enhance bills with senator profiles
-    enhancedBills = bills.map((bill) => ({
-      ...bill,
-      senator_profile: bill.senator_id ? senatorProfiles.get(bill.senator_id) : undefined,
-    }));
 
     // Step 3+: Process bills
     const billsToProcess = limit ? enhancedBills.slice(0, limit) : enhancedBills;

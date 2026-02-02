@@ -6,33 +6,6 @@ An AI-powered chatbot for querying and analyzing Missouri legislative bills (Hou
 
 This project aims to make Missouri legislative information accessible and queryable through natural language. Users will be able to ask questions about bills, sponsors, legislative actions, and more, with the AI agent providing informed responses based on comprehensive bill data.
 
-## Current Status
-
-🟢 **Phase 1: Data Ingestion & Storage** (Complete)
-
-- ✅ Web scraper built and functional
-- ✅ Comprehensive bill data extraction (sponsors, actions, hearings, PDFs)
-- ✅ Legislator profile scraping (party, years served, active status)
-- ✅ Session-based database architecture
-- ✅ Direct insertion into PostgreSQL with pgvector
-
-🟢 **Phase 2: Vectorization & RAG Setup** (Complete)
-
-- ✅ Embeddings pipeline with LangChain SDK
-- ✅ Smart chunking (section-based for legislative text, sentence-based for summaries)
-- ✅ Document filtering (Introduced + most recent version, excludes fiscal notes)
-- ✅ Rich metadata (session, sponsors, co-sponsors, committees)
-- ✅ Vector storage with pgvector and similarity search function
-- ✅ Full-text extraction with line number preservation for UI display
-
-🟢 **Phase 3: AI Agent with Next.js** (Complete)
-
-- ✅ LangGraph.js agent with 6 specialized tools
-- ✅ Semantic search using vector embeddings
-- ✅ Bill lookup, timeline, and hearing queries
-- ✅ Next.js 15 full-stack application with chat interface
-- ✅ API routes for agent interactions
-
 ## Architecture
 
 ```
@@ -70,46 +43,6 @@ This project aims to make Missouri legislative information accessible and querya
 - **OpenAI** - Embeddings (text-embedding-3-small) and LLM (GPT-4o)
 - **Supabase** - PostgreSQL database with pgvector extension
 - **Tailwind CSS** - Styling
-
-**Next Steps:**
-- Additional UI features and optimizations
-- Production deployment
-
-## Project Roadmap
-
-- [x] **Phase 1: Data Ingestion & Storage**
-  - [x] Scrape bill metadata (sponsors, actions, hearings)
-  - [x] Scrape legislator details (party, years served, active status)
-  - [x] Download bill text PDFs
-  - [x] Design session-based database schema
-  - [x] Direct insertion of scraped data into Supabase
-
-- [x] **Phase 2: Vectorization & RAG Setup**
-  - [x] Generate embeddings for bill text and metadata
-  - [x] Create vector indexes for similarity search
-  - [x] Implement smart chunking strategies
-  - [x] Add comprehensive metadata to embeddings
-  - [x] Extract and store full text with line numbers for UI display
-
-- [x] **Phase 3: AI Agent with Next.js**
-  - [x] Build LangGraph.js agent in TypeScript
-  - [x] Implement RAG pipeline
-  - [x] Create 6 specialized tools for querying bill data
-  - [x] Build Next.js full-stack application
-  - [x] Create API routes for chat interactions
-  - [x] Implement React chat interface
-
-- [ ] **Phase 4: UI Improvements**
-  - [ ] Enhanced chat interface with message history
-  - [ ] Bill detail views
-  - [ ] Search filters and facets
-  - [ ] Responsive design improvements
-
-- [ ] **Phase 5: Production Deployment**
-  - [ ] Authentication and user management
-  - [ ] Performance optimizations
-  - [ ] Monitoring and analytics
-  - [ ] Deploy to production
 
 ## Getting Started
 
