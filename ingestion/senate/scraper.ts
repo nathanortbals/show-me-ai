@@ -30,6 +30,7 @@ import {
 import { scrapeSendBillActions } from './actions';
 import { scrapeSendBillDocuments, scrapeSendBillSummaries } from './documents';
 import { scrapeSenatorProfile, SenatorProfile } from './senators';
+import { scrapeSenateCoSponsors } from './sponsors';
 import { downloadBillDocuments } from '../shared/documents';
 import { generateEmbeddingsForBill } from '../shared/embeddings';
 
@@ -173,6 +174,24 @@ class MoSenateBillScraper {
         });
       } else {
         console.log(`  Warning: Sponsor '${billData.sponsor}' not found in session_legislators`);
+      }
+    }
+
+    // Co-sponsors
+    if (billData.cosponsors) {
+      const cosponsorNames = billData.cosponsors.split('; ');
+      for (const cosponsorName of cosponsorNames) {
+        if (cosponsorName.trim()) {
+          const sessionLegislatorId = await this.getSessionLegislatorByName(cosponsorName.trim());
+          if (sessionLegislatorId) {
+            sponsorsData.push({
+              session_legislator_id: sessionLegislatorId,
+              is_primary: false,
+            });
+          } else {
+            console.log(`  Warning: Co-sponsor '${cosponsorName}' not found in session_legislators`);
+          }
+        }
       }
     }
 
@@ -411,6 +430,18 @@ export async function scrapeSenateBillsForSession(
           console.log(`  Warning: Could not scrape actions: ${e}`);
         }
 
+        // Scrape co-sponsors
+        let cosponsors = '';
+        try {
+          cosponsors = await scrapeSenateCoSponsors(page, billId, year, sessionCode);
+          if (cosponsors) {
+            const count = cosponsors.split('; ').length;
+            console.log(`  Found ${count} co-sponsor(s)`);
+          }
+        } catch (e) {
+          console.log(`  Warning: Could not scrape co-sponsors: ${e}`);
+        }
+
         // Download PDFs and extract text
         let documentInfo: DocumentInfo[] = [];
         try {
@@ -431,6 +462,7 @@ export async function scrapeSenateBillsForSession(
           last_action: details.last_action,
           proposed_effective_date: details.proposed_effective_date,
           actions,
+          cosponsors,
         };
 
         const [dbBillId, wasUpdated] = await scraper.insertBillToDb(merged, documentInfo);
