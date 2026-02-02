@@ -44,7 +44,13 @@ function MarkdownLink({
   onOpenDrawer,
   ...props
 }: MarkdownLinkProps) {
-  const state = href ? parseHashToDrawerState(href) : null;
+  // Handle incomplete links during streaming - render as plain text
+  // Streamdown uses this placeholder URL for links that are still being typed
+  if (!href || href === 'streamdown:incomplete-link') {
+    return <span className="text-neutral-400">{children}</span>;
+  }
+
+  const state = parseHashToDrawerState(href);
 
   if (state) {
     // Person icon for legislators

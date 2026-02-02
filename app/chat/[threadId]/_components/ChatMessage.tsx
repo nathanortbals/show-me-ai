@@ -1,7 +1,7 @@
 'use client';
 
 import { Streamdown } from 'streamdown';
-import { ComponentType } from 'react';
+import { ComponentType, useMemo } from 'react';
 
 interface ChatMessageProps {
   role: 'user' | 'assistant';
@@ -10,6 +10,16 @@ interface ChatMessageProps {
 }
 
 export default function ChatMessage({ role, content, markdownComponents }: ChatMessageProps) {
+  // Disable link safety to prevent "BLOCKED" from showing during streaming
+  // Our custom MarkdownLink component handles security by only opening drawers
+  // for valid internal hash links (#bill:, #legislator:, etc.)
+  const linkSafetyConfig = useMemo(
+    () => ({
+      enabled: false,
+    }),
+    []
+  );
+
   if (role === 'user') {
     return (
       <div className="flex justify-end">
@@ -22,7 +32,9 @@ export default function ChatMessage({ role, content, markdownComponents }: ChatM
 
   return (
     <div className="prose prose-sm prose-invert max-w-none wrap-break-word prose-p:my-1 prose-p:leading-normal prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-headings:mb-1 prose-headings:mt-3 prose-pre:bg-neutral-800">
-      <Streamdown components={markdownComponents}>{content}</Streamdown>
+      <Streamdown components={markdownComponents} linkSafety={linkSafetyConfig}>
+        {content}
+      </Streamdown>
     </div>
   );
 }
