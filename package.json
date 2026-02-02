@@ -9,10 +9,10 @@
     "lint": "eslint",
     "types:db": "supabase gen types typescript --project-id efzhjpcwuvfsgrhlksrf > database/types.ts",
     "ingest": "tsx ingestion/cli.ts",
-    "ingest:legislators": "tsx ingestion/cli.ts scrape-legislators",
-    "ingest:bills": "tsx ingestion/cli.ts scrape-bills",
-    "ingest:senate-bills": "tsx ingestion/cli.ts scrape-senate-bills",
-    "ingest:all": "tsx ingestion/cli.ts scrape-all"
+    "ingest:house": "tsx ingestion/cli.ts scrape-house",
+    "ingest:senate": "tsx ingestion/cli.ts scrape-senate",
+    "ingest:house-all": "tsx ingestion/cli.ts scrape-house-all",
+    "ingest:senate-all": "tsx ingestion/cli.ts scrape-senate-all"
   },
   "overrides": {
     "pdf-parse": "^1.1.4"

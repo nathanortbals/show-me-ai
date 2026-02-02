@@ -8,7 +8,7 @@ import { DatabaseClient } from '@/database/client';
 /**
  * Legislator list item from roster page
  */
-interface LegislatorListItem {
+export interface LegislatorListItem {
   name: string;
   district: string;
   party_abbrev: string;
@@ -18,7 +18,7 @@ interface LegislatorListItem {
 /**
  * Detailed legislator information from profile page
  */
-interface LegislatorDetails {
+export interface LegislatorDetails {
   name: string;
   legislator_type: string;
   district: string;

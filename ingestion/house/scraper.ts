@@ -16,13 +16,18 @@ import {
 import { Database } from '@/database/types';
 
 // Import domain modules
-import { BillData, DocumentInfo } from '../../shared/types';
+import { BillData, DocumentInfo } from '../shared/types';
 import { scrapeBillList, scrapeBillDetails } from './bills';
 import { scrapeHearings, parseHearingTime } from './hearings';
 import { scrapeActions } from './actions';
 import { scrapeCosponsors, extractDistrictFromSponsor } from './sponsors';
-import { downloadBillDocuments } from '../../shared/documents';
-import { generateEmbeddingsForBill } from '../../shared/embeddings';
+import { downloadBillDocuments } from '../shared/documents';
+import { generateEmbeddingsForBill } from '../shared/embeddings';
+import {
+  MoLegislatorScraper,
+  LegislatorListItem,
+  LegislatorDetails,
+} from './legislators';
 
 /**
  * Missouri House Bill Scraper
@@ -264,10 +269,12 @@ class MoHouseBillScraper {
 }
 
 /**
- * Scrape bills for a session.
+ * Scrape House bills for a session.
  *
- * Processes each bill sequentially: scrape → download PDFs → extract text → DB → embeddings.
- * For GitHub Actions, use --limit and --offset to divide into batches.
+ * Process:
+ * 1. Scrape legislators and insert into database
+ * 2. Scrape bill list
+ * 3. For each bill: scrape details → download PDFs → extract text → DB → embeddings
  *
  * @param options - Scraper options (year, sessionCode, limit, pdfDir, force)
  * @param db - Optional database instance (creates one if not provided)
@@ -286,6 +293,7 @@ export async function scrapeBillsForSession(
 
   const database = db || new DatabaseClient();
   const scraper = new MoHouseBillScraper(year, sessionCode, database);
+  const legislatorScraper = new MoLegislatorScraper(year || null, sessionCode, database);
 
   let processedCount = 0;
   let skippedCount = 0;
@@ -293,11 +301,68 @@ export async function scrapeBillsForSession(
 
   try {
     await scraper.start();
+    await legislatorScraper.start();
 
     const sessionId = await scraper.getOrCreateSession();
     const sessionYear = year || 2026;
     console.log(`Session: ${sessionYear} ${sessionCode} (ID: ${sessionId})\n`);
 
+    // Step 1: Scrape legislators
+    console.log('Step 1: Scraping legislators...');
+    const legislators = await legislatorScraper.scrapeLegislatorList();
+
+    if (!legislators || legislators.length === 0) {
+      console.log('No legislators found!');
+    } else {
+      console.log(`Found ${legislators.length} legislators`);
+      let insertedCount = 0;
+      let updatedCount = 0;
+
+      for (let i = 0; i < legislators.length; i++) {
+        const legislator = legislators[i];
+        try {
+          const details = await legislatorScraper.scrapeLegislatorDetails(legislator.profile_url);
+
+          // Skip vacant districts
+          if (!details.legislator_type) {
+            continue;
+          }
+
+          const yearElected = details.year_elected ? parseInt(details.year_elected, 10) : undefined;
+          const yearsServed = details.years_served ? parseInt(details.years_served, 10) : undefined;
+
+          const [legislatorId, wasUpdated] = await database.upsertLegislator({
+            name: details.name,
+            legislator_type: details.legislator_type,
+            party_affiliation: details.party_affiliation,
+            year_elected: yearElected,
+            years_served: yearsServed,
+            picture_url: details.picture_url,
+            is_active: details.is_active,
+            profile_url: details.profile_url,
+          });
+
+          const district = details.district || legislator.district;
+          await database.linkLegislatorToSession(sessionId, legislatorId, district);
+
+          if (wasUpdated) {
+            updatedCount++;
+          } else {
+            insertedCount++;
+          }
+        } catch (e) {
+          // Silently continue on individual legislator errors
+        }
+      }
+
+      console.log(`  ✓ Inserted: ${insertedCount}, Updated: ${updatedCount}`);
+    }
+
+    // Close legislator scraper browser
+    await legislatorScraper.close();
+
+    // Step 2: Get bill list
+    console.log('\nStep 2: Fetching bill list...');
     const page = scraper.getPage();
     const bills = await scrapeBillList(page, year, sessionCode);
 
@@ -305,9 +370,13 @@ export async function scrapeBillsForSession(
       console.log('No bills found!');
       return;
     }
+    console.log(`Found ${bills.length} bills`);
 
+    // Step 3: Process bills
     const billsToProcess = limit ? bills.slice(0, limit) : bills;
-    console.log(`Processing ${billsToProcess.length} bills${limit ? ` (limited from ${bills.length})` : ''}...\n`);
+    console.log(
+      `\nStep 3: Processing ${billsToProcess.length} bills${limit ? ` (limited from ${bills.length})` : ''}...\n`
+    );
     console.log('='.repeat(60));
 
     for (let i = 0; i < billsToProcess.length; i++) {

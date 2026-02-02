@@ -20,19 +20,18 @@ import { DatabaseClient, SponsorData, ActionData, DocumentData } from '@/databas
 import { Database } from '@/database/types';
 
 // Import domain modules
-import { BillData, DocumentInfo } from '../../shared/types';
+import { BillData, DocumentInfo } from '../shared/types';
 import {
   scrapeSendBillList,
   scrapeSendBillDetails,
-  scrapeSendBillDocuments,
-  scrapeSendBillSummaries,
-  scrapeSendBillActions,
   SenateBillListItem,
   SenateBillDetails,
 } from './bills';
-import { scrapeSenatorProfile, SenatorProfile } from '../legislators/senators';
-import { downloadBillDocuments } from '../../shared/documents';
-import { generateEmbeddingsForBill } from '../../shared/embeddings';
+import { scrapeSendBillActions } from './actions';
+import { scrapeSendBillDocuments, scrapeSendBillSummaries } from './documents';
+import { scrapeSenatorProfile, SenatorProfile } from './senators';
+import { downloadBillDocuments } from '../shared/documents';
+import { generateEmbeddingsForBill } from '../shared/embeddings';
 
 /**
  * Enhanced bill data with senator profile information.

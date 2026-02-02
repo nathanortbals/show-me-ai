@@ -55,33 +55,29 @@ npx playwright install chromium
 
 ### Scraping
 
-**House bills (single session):**
+**House (single session):**
 ```bash
-# Step 1: Scrape legislators first
-npm run ingest:legislators -- --year 2026
-
-# Step 2: Scrape House bills
-npm run ingest:bills -- --year 2026
+npm run ingest:house -- --year 2026
 ```
 
-**Senate bills:**
+**Senate (single session):**
 ```bash
-# Scrape Senate bills (includes senators)
-npm run ingest:senate-bills -- --year 2026
+npm run ingest:senate -- --year 2026
 
 # With limit for testing
-npm run ingest:senate-bills -- --year 2026 --limit 10
+npm run ingest:senate -- --year 2026 --limit 10
 ```
 
-**All House sessions (2026-2000):**
+**All sessions (2026-2000):**
 ```bash
-npm run ingest:all
+npm run ingest:house-all
+npm run ingest:senate-all
 ```
 
 **Re-process existing bills (force re-extraction and re-embedding):**
 ```bash
-npm run ingest:bills -- --year 2026 --force
-npm run ingest:senate-bills -- --year 2026 --force
+npm run ingest:house -- --year 2026 --force
+npm run ingest:senate -- --year 2026 --force
 ```
 
 ### Next.js App & AI Agent
@@ -115,10 +111,10 @@ Migrations must be run manually in Supabase SQL Editor. See `database/migrations
 
 ### `ingestion/cli.ts`
 Command-line interface for all ingestion operations. Provides commands for:
-- `scrape-legislators` - Scrape House legislators for a session
-- `scrape-bills` - Scrape House bills, extract text, and generate embeddings
-- `scrape-senate-bills` - Scrape Senate bills and senators
-- `scrape-all` - Scrape all House sessions (legislators then bills)
+- `scrape-house` - Scrape House legislators and bills for a session
+- `scrape-senate` - Scrape Senate senators and bills for a session
+- `scrape-house-all` - Scrape all House sessions (2026-2000)
+- `scrape-senate-all` - Scrape all Senate sessions (2026-2000)
 
 ### `database/client.ts`
 Central database client class. All database operations go through this. Key methods:
@@ -270,9 +266,9 @@ This project uses **npm** as a TypeScript monorepo. All commands should use `npm
 - ❌ `yarn` or `pnpm` - Not used in this project
 
 **Common npm scripts:**
-- `npm run ingest:legislators` - Scrape House legislators
-- `npm run ingest:bills` - Scrape House bills (includes text extraction and embedding generation)
-- `npm run ingest:senate-bills` - Scrape Senate bills and senators
-- `npm run ingest:all` - Scrape all House sessions
+- `npm run ingest:house` - Scrape House legislators and bills
+- `npm run ingest:senate` - Scrape Senate senators and bills
+- `npm run ingest:house-all` - Scrape all House sessions (2026-2000)
+- `npm run ingest:senate-all` - Scrape all Senate sessions (2026-2000)
 - `npm run dev` - Start Next.js dev server (from app/ directory)
 - `npm run build` - Build Next.js app (from app/ directory)

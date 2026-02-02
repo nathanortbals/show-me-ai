@@ -1,6 +1,6 @@
 # Show-Me AI
 
-An AI-powered chatbot for querying and analyzing Missouri House of Representatives bills using RAG (Retrieval-Augmented Generation). Named after Missouri's nickname, "The Show-Me State."
+An AI-powered chatbot for querying and analyzing Missouri legislative bills (House and Senate) using RAG (Retrieval-Augmented Generation). Named after Missouri's nickname, "The Show-Me State."
 
 ## Vision
 
@@ -232,76 +232,43 @@ langgraphjs dev
 
 ##### Single Session
 
-The scraping process follows a 2-step workflow:
-
-**Step 1: Scrape Legislators**
+**House (legislators + bills):**
 ```bash
-npm run ingest:legislators -- --year 2026
+npm run ingest:house -- --year 2026
 ```
 
-**Step 2: Scrape Bills**
+**Senate (senators + bills):**
 ```bash
-npm run ingest:bills -- --year 2026
-```
-
-**Step 3: Generate Embeddings**
-```bash
-npm run ingest:embeddings -- --year 2026 --session-code R
+npm run ingest:senate -- --year 2026
 ```
 
 Options:
-- `--year`: Legislative year (required)
+- `--year`: Legislative year (default: 2026)
 - `--session-code`: Session code - R (Regular), S1 (First Special), S2 (Second Special)
-- `--limit`: Optional limit on number of bills to process
-
-**Step 4: Extract Full Text (Optional)**
-```bash
-npm run ingest:text -- --year 2026 --session-code R
-```
-
-This extracts full text from bill PDFs and stores it in the database with line numbers preserved for UI reference.
-
-Options:
-- `--year`: Legislative year (required)
-- `--session-code`: Session code - R (Regular), S1 (First Special), S2 (Second Special)
-- `--force`: Re-extract text for documents that already have it (default: skip already extracted)
+- `--limit`: Optional limit on number of bills to process (Senate only)
+- `--force`: Re-process bills that already have extracted text
 
 ##### All Sessions (2026-2000)
 
-To scrape all sessions at once:
+To scrape all House sessions:
 ```bash
-npm run ingest:all
+npm run ingest:house-all
 ```
 
-This will process sessions from 2026 back to 2000. The script is idempotent and can be safely interrupted and resumed.
-
-To generate embeddings for all sessions:
+To scrape all Senate sessions:
 ```bash
-npm run ingest:embeddings:all
-```
-
-The embeddings pipeline will:
-- Extract text from bill PDFs in Supabase Storage
-- Filter to "Introduced" + most recent version (excludes fiscal notes)
-- Chunk using section-based or sentence-based strategies
-- Generate embeddings via OpenAI text-embedding-3-small
-- Store with comprehensive metadata (sponsors, committees, session info)
-
-To extract full text for all sessions:
-```bash
-npm run ingest:text:all
+npm run ingest:senate-all
 ```
 
 Options:
 - `--start-year <year>`: Start from a specific year and work backwards (default: 2026)
-- `--force`: Re-extract text for documents that already have it
 
-The text extraction pipeline will:
-- Extract full text from all bill PDFs
-- Preserve line numbers for UI reference
-- Store text in `bill_documents.extracted_text` column
-- Track extraction timestamp for incremental updates
-- Skip already-extracted documents by default (use `--force` to re-extract)
+The scraping pipeline will:
+- Scrape legislators/senators first (required for sponsor linking)
+- Download bill PDFs and extract text
+- Generate embeddings via OpenAI text-embedding-3-small
+- Store with comprehensive metadata (sponsors, committees, session info)
+- Skip already-processed bills by default (use `--force` to re-process)
 
 
 ## Documentation
@@ -322,20 +289,21 @@ show-me-ai/
 │   ├── graph.ts                 # Agent graph definition
 │   └── tools.ts                 # Agent tools (6 specialized tools)
 ├── ingestion/                    # TypeScript data ingestion
-│   ├── bills/                   # Bill scraper
-│   ├── legislators/             # Legislator scraper
-│   ├── embeddings/              # Embeddings pipeline
+│   ├── house/                   # House scraper modules
+│   │   ├── bills/              # House bill scraper
+│   │   └── legislators/        # House legislator scraper
+│   ├── senate/                  # Senate scraper modules
+│   │   ├── bills/              # Senate bill scraper
+│   │   └── legislators/        # Senator scraper
+│   ├── shared/                  # Shared ingestion utilities
 │   │   ├── chunking.ts         # Text chunking strategies
-│   │   └── pipeline.ts         # Main embeddings pipeline
-│   ├── text-extraction/         # Full-text extraction from PDFs
-│   │   └── extractor.ts        # Text extraction with line preservation
-│   ├── database/                # Database client and utilities
+│   │   ├── embeddings.ts       # Embeddings generation
+│   │   └── documents.ts        # PDF download and extraction
 │   └── cli.ts                   # Command-line interface
 ├── database/                     # Database types and migrations
+│   ├── client.ts                # Database client class
 │   ├── types.ts                 # Shared TypeScript types
 │   └── migrations/              # SQL migration files
-├── shared/                       # Shared utilities
-│   └── db.ts                    # Database client and utilities
 ├── package.json                  # Node.js dependencies
 ├── .env.local                   # Environment variables (gitignored)
 ├── DATABASE_SCHEMA.md           # Database documentation

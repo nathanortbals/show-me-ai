@@ -3,14 +3,7 @@
  */
 
 import { Page } from 'playwright';
-import { BillListItem, BillDetails, ScrapedDocument } from '../../shared/types';
-
-/**
- * Get the Senate bill list URL for a session.
- */
-function getBillListUrl(year: number = 2026, sessionCode: string = 'R'): string {
-  return `https://www.senate.mo.gov/BillTracking/Bills/BillList?year=${year}&session=${sessionCode}`;
-}
+import { BillListItem, BillDetails } from '../shared/types';
 
 /**
  * Get the two-digit year code for Senate URLs.
@@ -18,6 +11,13 @@ function getBillListUrl(year: number = 2026, sessionCode: string = 'R'): string 
  */
 function getYearCode(year: number): string {
   return String(year).slice(-2);
+}
+
+/**
+ * Get the Senate bill list URL for a session.
+ */
+function getBillListUrl(year: number = 2026, sessionCode: string = 'R'): string {
+  return `https://www.senate.mo.gov/BillTracking/Bills/BillList?year=${year}&session=${sessionCode}`;
 }
 
 /**
@@ -29,34 +29,10 @@ function getBillDetailUrl(billId: string, year: number, sessionCode: string = 'R
 }
 
 /**
- * Get the Senate bill text page URL (lists available PDFs).
- */
-function getBillTextUrl(billId: string, year: number, sessionCode: string = 'R'): string {
-  const yearCode = getYearCode(year);
-  return `https://www.senate.mo.gov/${yearCode}info/BTS_Web/BillText.aspx?SessionType=${sessionCode}&BillID=${billId}`;
-}
-
-/**
- * Get the Senate bill summaries page URL.
- */
-function getSummariesUrl(billId: string, year: number, sessionCode: string = 'R'): string {
-  const yearCode = getYearCode(year);
-  return `https://www.senate.mo.gov/${yearCode}info/BTS_Web/Summaries.aspx?SessionType=${sessionCode}&BillID=${billId}`;
-}
-
-/**
- * Get the Senate bill actions page URL.
- */
-function getActionsUrl(billId: string, year: number, sessionCode: string = 'R'): string {
-  const yearCode = getYearCode(year);
-  return `https://www.senate.mo.gov/${yearCode}info/BTS_Web/Actions.aspx?SessionType=${sessionCode}&BillID=${billId}`;
-}
-
-/**
  * Extract BillID from a Senate bill URL.
  * e.g., "https://www.senate.mo.gov/26info/BTS_Web/Bill.aspx?SessionType=R&BillID=416" -> "416"
  */
-function extractBillIdFromUrl(url: string): string | null {
+export function extractBillIdFromUrl(url: string): string | null {
   const match = url.match(/BillID=(\d+)/);
   return match ? match[1] : null;
 }
@@ -65,7 +41,7 @@ function extractBillIdFromUrl(url: string): string | null {
  * Extract Senator member ID from a Senate sponsor URL.
  * e.g., "https://www.senate.mo.gov/Senators/Member/28" -> "28"
  */
-function extractSenatorIdFromUrl(url: string): string | null {
+export function extractSenatorIdFromUrl(url: string): string | null {
   const match = url.match(/\/Member\/(\d+)/);
   return match ? match[1] : null;
 }
@@ -262,165 +238,3 @@ export async function scrapeSendBillDetails(
 
   return details;
 }
-
-/**
- * Scrape bill text documents (PDFs) from the Senate bill text page.
- *
- * @param page - Playwright page instance
- * @param billId - Internal Senate bill ID
- * @param billNumber - Bill number for doc_id generation
- * @param year - Session year
- * @param sessionCode - Session code
- * @returns Array of scraped documents
- */
-export async function scrapeSendBillDocuments(
-  page: Page,
-  billId: string,
-  billNumber: string,
-  year: number,
-  sessionCode: string = 'R'
-): Promise<ScrapedDocument[]> {
-  const url = getBillTextUrl(billId, year, sessionCode);
-  await page.goto(url, { waitUntil: 'networkidle' });
-
-  const documents = await page.evaluate((billNum: string): ScrapedDocument[] => {
-    const docs: ScrapedDocument[] = [];
-
-    // Find all PDF links on the page
-    const links = Array.from(document.querySelectorAll('a[href*=".pdf"]')) as HTMLAnchorElement[];
-
-    for (const link of links) {
-      const title = link.textContent?.trim() || '';
-      const url = link.href;
-
-      // Generate doc_id from bill number and title
-      // e.g., "SB834I" for Introduced version
-      const cleanBillNum = billNum.replace(/\s+/g, '');
-      const titleCode = title.charAt(0).toUpperCase(); // First letter of title
-      const docId = `${cleanBillNum}${titleCode}`;
-
-      docs.push({
-        doc_id: docId,
-        type: 'Bill Text',
-        title: title,
-        url: url,
-      });
-    }
-
-    return docs;
-  }, billNumber);
-
-  return documents;
-}
-
-/**
- * Scrape bill summary documents from the Senate summaries page.
- *
- * @param page - Playwright page instance
- * @param billId - Internal Senate bill ID
- * @param billNumber - Bill number for doc_id generation
- * @param year - Session year
- * @param sessionCode - Session code
- * @returns Array of scraped summary documents
- */
-export async function scrapeSendBillSummaries(
-  page: Page,
-  billId: string,
-  billNumber: string,
-  year: number,
-  sessionCode: string = 'R'
-): Promise<ScrapedDocument[]> {
-  const url = getSummariesUrl(billId, year, sessionCode);
-  await page.goto(url, { waitUntil: 'networkidle' });
-
-  const documents = await page.evaluate((billNum: string): ScrapedDocument[] => {
-    const docs: ScrapedDocument[] = [];
-
-    // The summaries page shows the summary text directly
-    // Check if there's any summary content
-    const summarySection = document.querySelector('body');
-    const bodyText = summarySection?.innerText || '';
-
-    // Check for "No Summaries Found" message
-    if (bodyText.includes('No Summaries Found')) {
-      return [];
-    }
-
-    // Look for PDF links if any
-    const pdfLinks = Array.from(document.querySelectorAll('a[href*=".pdf"]')) as HTMLAnchorElement[];
-
-    for (const link of pdfLinks) {
-      const title = link.textContent?.trim() || 'Summary';
-      const url = link.href;
-
-      const cleanBillNum = billNum.replace(/\s+/g, '');
-      const docId = `${cleanBillNum}SUM`;
-
-      docs.push({
-        doc_id: docId,
-        type: 'Bill Summary',
-        title: title,
-        url: url,
-      });
-    }
-
-    return docs;
-  }, billNumber);
-
-  return documents;
-}
-
-/**
- * Scrape bill actions from the Senate actions page.
- *
- * @param page - Playwright page instance
- * @param billId - Internal Senate bill ID
- * @param year - Session year
- * @param sessionCode - Session code
- * @returns Actions string in format "date | description || date | description"
- */
-export async function scrapeSendBillActions(
-  page: Page,
-  billId: string,
-  year: number,
-  sessionCode: string = 'R'
-): Promise<string> {
-  const url = getActionsUrl(billId, year, sessionCode);
-  await page.goto(url, { waitUntil: 'networkidle' });
-
-  const actions = await page.evaluate((): string => {
-    const actionParts: string[] = [];
-
-    // The actions page typically has a table or list of actions
-    // Try to find action rows
-    const rows = Array.from(document.querySelectorAll('tr'));
-
-    for (const row of rows) {
-      const cells = Array.from(row.querySelectorAll('td'));
-      if (cells.length >= 2) {
-        const date = cells[0].textContent?.trim() || '';
-        const description = cells[1].textContent?.trim() || '';
-
-        if (date && description) {
-          actionParts.push(`${date} | ${description}`);
-        }
-      }
-    }
-
-    return actionParts.join(' || ');
-  });
-
-  return actions;
-}
-
-// Export URL helper functions for use in other modules
-export {
-  getBillListUrl,
-  getBillDetailUrl,
-  getBillTextUrl,
-  getSummariesUrl,
-  getActionsUrl,
-  getYearCode,
-  extractBillIdFromUrl,
-  extractSenatorIdFromUrl,
-};

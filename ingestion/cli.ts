@@ -22,9 +22,8 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 import { Command } from 'commander';
-import { runLegislatorScraper } from './house/legislators/scraper';
-import { scrapeBillsForSession } from './house/bills/scraper';
-import { scrapeSenateBillsForSession } from './senate/bills/scraper';
+import { scrapeBillsForSession } from './house/scraper';
+import { scrapeSenateBillsForSession } from './senate/scraper';
 import { DatabaseClient } from '@/database/client';
 
 // All Missouri House sessions from 2026 to 2000
@@ -137,33 +136,10 @@ program
   .description('Show-Me AI ingestion tools')
   .version('0.1.0');
 
-// Scrape legislators command
+// Scrape House command (legislators + bills)
 program
-  .command('scrape-legislators')
-  .description('Scrape legislators for a session')
-  .option('--year <year>', 'Session year', '2026')
-  .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
-  .action(async (options) => {
-    const year = parseInt(options.year);
-    const sessionCode = options.sessionCode;
-
-    console.log(`\n${'='.repeat(80)}`);
-    console.log(`SCRAPING LEGISLATORS: ${year} ${sessionCode}`);
-    console.log('='.repeat(80));
-
-    try {
-      await runLegislatorScraper({ year, sessionCode });
-      console.log('\n✅ Legislators scraping complete');
-    } catch (error) {
-      console.error('\n❌ Failed to scrape legislators:', error);
-      process.exit(1);
-    }
-  });
-
-// Scrape bills command
-program
-  .command('scrape-bills')
-  .description('Scrape bills for a session (includes PDF text extraction and embedding generation)')
+  .command('scrape-house')
+  .description('Scrape House legislators and bills for a session')
   .option('--year <year>', 'Session year', '2026')
   .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
   .option('--force', 'Re-process bills that already have extracted text', false)
@@ -173,7 +149,7 @@ program
     const force = options.force;
 
     console.log(`\n${'='.repeat(80)}`);
-    console.log(`SCRAPING BILLS: ${year} ${sessionCode}`);
+    console.log(`SCRAPING HOUSE LEGISLATORS & BILLS: ${year} ${sessionCode}`);
     console.log('='.repeat(80));
     if (!force) {
       console.log('Bills with existing extracted text will be skipped (use --force to re-process).\n');
@@ -183,17 +159,17 @@ program
 
     try {
       await scrapeBillsForSession({ year, sessionCode, force });
-      console.log('\n✅ Bills scraping complete');
+      console.log('\n✅ House legislators & bills scraping complete');
     } catch (error) {
       console.error('\n❌ Failed to scrape bills:', error);
       process.exit(1);
     }
   });
 
-// Scrape Senate bills command
+// Scrape Senate command (senators + bills)
 program
-  .command('scrape-senate-bills')
-  .description('Scrape Senate bills for a session (includes PDF text extraction and embedding generation)')
+  .command('scrape-senate')
+  .description('Scrape Senate senators and bills for a session')
   .option('--year <year>', 'Session year', '2026')
   .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
   .option('--limit <limit>', 'Limit number of bills to process')
@@ -205,7 +181,7 @@ program
     const limit = options.limit ? parseInt(options.limit) : undefined;
 
     console.log(`\n${'='.repeat(80)}`);
-    console.log(`SCRAPING SENATE BILLS: ${year} ${sessionCode}`);
+    console.log(`SCRAPING SENATE: ${year} ${sessionCode}`);
     console.log('='.repeat(80));
     if (!force) {
       console.log('Bills with existing extracted text will be skipped (use --force to re-process).\n');
@@ -215,17 +191,17 @@ program
 
     try {
       await scrapeSenateBillsForSession({ year, sessionCode, force, limit });
-      console.log('\n✅ Senate bills scraping complete');
+      console.log('\n✅ Senate scraping complete');
     } catch (error) {
-      console.error('\n❌ Failed to scrape Senate bills:', error);
+      console.error('\n❌ Failed to scrape Senate:', error);
       process.exit(1);
     }
   });
 
-// Scrape all sessions command
+// Scrape all House sessions command
 program
-  .command('scrape-all')
-  .description('Scrape all sessions from 2026 to 2000 (legislators + bills)')
+  .command('scrape-house-all')
+  .description('Scrape all House sessions from 2026 to 2000')
   .option('--start-year <year>', 'Start from a specific year and work backwards', '2026')
   .action(async (options) => {
     const startYear = parseInt(options.startYear);
@@ -234,7 +210,7 @@ program
     const sessionsToProcess = SESSIONS.filter(s => s.year <= startYear);
 
     console.log('='.repeat(80));
-    console.log(`MISSOURI HOUSE SCRAPER - SESSIONS (${startYear}-2000)`);
+    console.log(`SCRAPING ALL HOUSE SESSIONS (${startYear}-2000)`);
     console.log('='.repeat(80));
     console.log(`\nTotal sessions to process: ${sessionsToProcess.length}`);
 
@@ -243,27 +219,63 @@ program
     const stats = {
       sessionsProcessed: 0,
       sessionsFailed: 0,
-      legislatorsInserted: 0,
-      legislatorsUpdated: 0,
-      billsInserted: 0,
-      billsUpdated: 0,
     };
 
     for (const { year, sessionCode, description } of sessionsToProcess) {
       try {
-        // Step 1: Scrape legislators
         console.log(`\n${'='.repeat(80)}`);
-        console.log(`SCRAPING LEGISLATORS: ${description}`);
-        console.log('='.repeat(80));
-
-        await runLegislatorScraper({ year, sessionCode }, db);
-
-        // Step 2: Scrape bills
-        console.log(`\n${'='.repeat(80)}`);
-        console.log(`SCRAPING BILLS: ${description}`);
+        console.log(`SCRAPING HOUSE: ${description}`);
         console.log('='.repeat(80));
 
         await scrapeBillsForSession({ year, sessionCode }, db);
+
+        stats.sessionsProcessed++;
+      } catch (error) {
+        console.error(`\n❌ FATAL ERROR processing ${description}:`, error);
+        stats.sessionsFailed++;
+        continue;
+      }
+    }
+
+    // Print final summary
+    console.log('\n' + '='.repeat(80));
+    console.log('FINAL SUMMARY');
+    console.log('='.repeat(80));
+    console.log(`Sessions processed: ${stats.sessionsProcessed}/${sessionsToProcess.length}`);
+    console.log(`Sessions failed: ${stats.sessionsFailed}`);
+    console.log('='.repeat(80));
+  });
+
+// Scrape all Senate sessions command
+program
+  .command('scrape-senate-all')
+  .description('Scrape all Senate sessions from 2026 to 2000')
+  .option('--start-year <year>', 'Start from a specific year and work backwards', '2026')
+  .action(async (options) => {
+    const startYear = parseInt(options.startYear);
+
+    // Filter sessions to start from specified year
+    const sessionsToProcess = SESSIONS.filter(s => s.year <= startYear);
+
+    console.log('='.repeat(80));
+    console.log(`SCRAPING ALL SENATE SESSIONS (${startYear}-2000)`);
+    console.log('='.repeat(80));
+    console.log(`\nTotal sessions to process: ${sessionsToProcess.length}`);
+
+    const db = new DatabaseClient();
+
+    const stats = {
+      sessionsProcessed: 0,
+      sessionsFailed: 0,
+    };
+
+    for (const { year, sessionCode, description } of sessionsToProcess) {
+      try {
+        console.log(`\n${'='.repeat(80)}`);
+        console.log(`SCRAPING SENATE: ${description}`);
+        console.log('='.repeat(80));
+
+        await scrapeSenateBillsForSession({ year, sessionCode }, db);
 
         stats.sessionsProcessed++;
       } catch (error) {
