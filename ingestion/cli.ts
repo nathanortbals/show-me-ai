@@ -22,8 +22,9 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 import { Command } from 'commander';
-import { runLegislatorScraper } from './legislators/scraper';
-import { scrapeBillsForSession } from './bills/scraper';
+import { runLegislatorScraper } from './house/legislators/scraper';
+import { scrapeBillsForSession } from './house/bills/scraper';
+import { scrapeSenateBillsForSession } from './senate/bills/scraper';
 import { DatabaseClient } from '@/database/client';
 
 // All Missouri House sessions from 2026 to 2000
@@ -185,6 +186,38 @@ program
       console.log('\n✅ Bills scraping complete');
     } catch (error) {
       console.error('\n❌ Failed to scrape bills:', error);
+      process.exit(1);
+    }
+  });
+
+// Scrape Senate bills command
+program
+  .command('scrape-senate-bills')
+  .description('Scrape Senate bills for a session (includes PDF text extraction and embedding generation)')
+  .option('--year <year>', 'Session year', '2026')
+  .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
+  .option('--limit <limit>', 'Limit number of bills to process')
+  .option('--force', 'Re-process bills that already have extracted text', false)
+  .action(async (options) => {
+    const year = parseInt(options.year);
+    const sessionCode = options.sessionCode;
+    const force = options.force;
+    const limit = options.limit ? parseInt(options.limit) : undefined;
+
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`SCRAPING SENATE BILLS: ${year} ${sessionCode}`);
+    console.log('='.repeat(80));
+    if (!force) {
+      console.log('Bills with existing extracted text will be skipped (use --force to re-process).\n');
+    } else {
+      console.log('--force enabled: All bills will be re-processed.\n');
+    }
+
+    try {
+      await scrapeSenateBillsForSession({ year, sessionCode, force, limit });
+      console.log('\n✅ Senate bills scraping complete');
+    } catch (error) {
+      console.error('\n❌ Failed to scrape Senate bills:', error);
       process.exit(1);
     }
   });

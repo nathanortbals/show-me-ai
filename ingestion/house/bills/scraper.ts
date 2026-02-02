@@ -16,13 +16,13 @@ import {
 import { Database } from '@/database/types';
 
 // Import domain modules
-import { BillData, DocumentInfo } from './types';
+import { BillData, DocumentInfo } from '../../shared/types';
 import { scrapeBillList, scrapeBillDetails } from './bills';
 import { scrapeHearings, parseHearingTime } from './hearings';
 import { scrapeActions } from './actions';
 import { scrapeCosponsors, extractDistrictFromSponsor } from './sponsors';
-import { downloadBillDocuments } from './documents';
-import { generateEmbeddingsForBill } from './embeddings';
+import { downloadBillDocuments } from '../../shared/documents';
+import { generateEmbeddingsForBill } from '../../shared/embeddings';
 
 /**
  * Missouri House Bill Scraper
@@ -376,6 +376,15 @@ export async function scrapeBillsForSession(
 
         const [billId, wasUpdated] = await scraper.insertBillToDb(merged, documentInfo);
         console.log(`  ✓ ${wasUpdated ? 'Updated' : 'Inserted'} in database`);
+
+        // Delete existing embeddings if force flag is set (ensures idempotency)
+        if (force) {
+          try {
+            await database.deleteEmbeddingsForBill(billId);
+          } catch (e) {
+            console.log(`  Warning: Could not delete existing embeddings: ${e}`);
+          }
+        }
 
         // Generate embeddings
         try {

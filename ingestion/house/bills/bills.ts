@@ -3,7 +3,7 @@
  */
 
 import { Page } from 'playwright';
-import { BillListItem, BillDetails } from './types';
+import { BillListItem, BillDetails } from '../../shared/types';
 
 const BASE_URL = 'https://house.mo.gov/billlist.aspx';
 const ARCHIVE_URL = 'https://archive.house.mo.gov/billlist.aspx';

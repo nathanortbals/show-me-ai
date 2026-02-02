@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Show-Me AI is an AI-powered chatbot for querying Missouri House of Representatives bills using RAG (Retrieval-Augmented Generation). Named after Missouri's nickname, "The Show-Me State." Built as a **TypeScript monorepo**, the project scrapes legislative data, generates vector embeddings, and provides a Next.js application with a LangGraph.js agent for natural language queries.
+Show-Me AI is an AI-powered chatbot for querying Missouri legislative bills (House and Senate) using RAG (Retrieval-Augmented Generation). Named after Missouri's nickname, "The Show-Me State." Built as a **TypeScript monorepo**, the project scrapes legislative data, generates vector embeddings, and provides a Next.js application with a LangGraph.js agent for natural language queries.
 
 **Current Phase**: Phase 3 complete (AI Agent with Next.js). Migrated to TypeScript monorepo. Next phases: UI improvements, production deployment.
 
@@ -13,7 +13,8 @@ Show-Me AI is an AI-powered chatbot for querying Missouri House of Representativ
 ### Three-Layer System
 
 1. **Ingestion Layer** (`ingestion/` - TypeScript)
-   - Scrapes legislators and bills from Missouri House website using Playwright
+   - Scrapes legislators and bills from Missouri House and Senate websites using Playwright
+   - Organized into `house/`, `senate/`, and `shared/` subfolders
    - Stores data in Supabase PostgreSQL + pgvector
    - Generates embeddings for semantic search using OpenAI
    - Command-line interface via `ingestion/cli.ts`
@@ -37,7 +38,7 @@ Show-Me AI is an AI-powered chatbot for querying Missouri House of Representativ
 
 **Two-Step Scraping Workflow**: Always scrape legislators first (they must exist before bills can reference them), then scrape bills. This is critical.
 
-**Smart Chunking**: Legislative text uses section-based chunking (keeps "Section A" together). Summaries use sentence-based chunking with overlap. See `ingestion/bills/chunking.ts`.
+**Smart Chunking**: Legislative text uses section-based chunking (keeps "Section A" together). Summaries use sentence-based chunking with overlap. See `ingestion/shared/chunking.ts`.
 
 **Inline Processing**: Text extraction and embedding generation happen during bill scraping (single pass). Bills with existing extracted text are skipped unless `--force` is used.
 
@@ -54,16 +55,25 @@ npx playwright install chromium
 
 ### Scraping
 
-**Single session:**
+**House bills (single session):**
 ```bash
 # Step 1: Scrape legislators first
 npm run ingest:legislators -- --year 2026
 
-# Step 2: Scrape bills
+# Step 2: Scrape House bills
 npm run ingest:bills -- --year 2026
 ```
 
-**All sessions (2026-2000):**
+**Senate bills:**
+```bash
+# Scrape Senate bills (includes senators)
+npm run ingest:senate-bills -- --year 2026
+
+# With limit for testing
+npm run ingest:senate-bills -- --year 2026 --limit 10
+```
+
+**All House sessions (2026-2000):**
 ```bash
 npm run ingest:all
 ```
@@ -71,6 +81,7 @@ npm run ingest:all
 **Re-process existing bills (force re-extraction and re-embedding):**
 ```bash
 npm run ingest:bills -- --year 2026 --force
+npm run ingest:senate-bills -- --year 2026 --force
 ```
 
 ### Next.js App & AI Agent
@@ -104,23 +115,34 @@ Migrations must be run manually in Supabase SQL Editor. See `database/migrations
 
 ### `ingestion/cli.ts`
 Command-line interface for all ingestion operations. Provides commands for:
-- `scrape-legislators` - Scrape legislators for a session
-- `scrape-bills` - Scrape bills, extract text, and generate embeddings (use `--force` to re-process)
-- `scrape-all` - Scrape all sessions (legislators then bills)
+- `scrape-legislators` - Scrape House legislators for a session
+- `scrape-bills` - Scrape House bills, extract text, and generate embeddings
+- `scrape-senate-bills` - Scrape Senate bills and senators
+- `scrape-all` - Scrape all House sessions (legislators then bills)
 
-### `ingestion/database/client.ts`
+### `database/client.ts`
 Central database client class. All database operations go through this. Key methods:
 - `getOrCreateSession()` - Always use this, never create sessions manually
 - `upsertBill()` - Handles both insert and update logic
-- `getBillsForSession(skipEmbedded=true)` - Filters out already-embedded bills
-- `markBillEmbeddingsGenerated()` - Called after successful embedding creation
+- `upsertLegislator()` - Insert or update legislator records
+- `deleteEmbeddingsForBill()` - Delete embeddings before re-generating (ensures idempotency)
+- `getSessionLegislatorByName()` - Find legislator by name with partial matching support
 
-### `ingestion/bills/chunking.ts`
+### `ingestion/shared/chunking.ts`
 Text preprocessing and chunking logic:
 - `cleanLegislativeText()` - Strips null bytes, line numbers, headers
 - `chunkBySections()` - For legislative text (keeps sections together)
 - `chunkBySentences()` - For summaries (adds overlap)
 - `chunkDocument()` - Auto-detects type and applies appropriate strategy
+
+### `ingestion/shared/embeddings.ts`
+Embedding generation for bill documents using OpenAI and LangChain.
+
+### `ingestion/house/bills/scraper.ts`
+House bill scraper orchestration - scrapes bills, downloads PDFs, extracts text, generates embeddings.
+
+### `ingestion/senate/bills/scraper.ts`
+Senate bill scraper orchestration - scrapes senators, bills, downloads PDFs, extracts text, generates embeddings.
 
 ### `agent/tools.ts`
 Agent tools using LangChain's `tool()` function. Important patterns:
@@ -193,7 +215,7 @@ Note: The monorepo uses a single `.env.local` file at the root, shared by both t
 
 ## Bill Document Filtering
 
-Only these documents get embeddings (see `ingestion/database/client.ts` `getEmbeddableBillDocuments()`):
+Only these documents get embeddings (see `database/client.ts` `getEmbeddableBillDocuments()`):
 1. "Introduced" version (always included)
 2. Most recent version if different from Introduced
 3. Fiscal notes are ALWAYS excluded
@@ -219,8 +241,8 @@ This prevents duplicate content and focuses on substantive legislative text.
 
 ### Adding a New Scraper Field
 
-1. Update scraper in `ingestion/scrapers/` to extract field
-2. Update `ingestion/database/client.ts` `upsertBill()` or equivalent method
+1. Update scraper in `ingestion/house/` or `ingestion/senate/` to extract field
+2. Update `database/client.ts` `upsertBill()` or equivalent method
 3. May need database migration if adding new column
 4. Update `DATABASE_SCHEMA.md`
 
@@ -248,8 +270,9 @@ This project uses **npm** as a TypeScript monorepo. All commands should use `npm
 - ❌ `yarn` or `pnpm` - Not used in this project
 
 **Common npm scripts:**
-- `npm run ingest:legislators` - Scrape legislators
-- `npm run ingest:bills` - Scrape bills (includes text extraction and embedding generation)
-- `npm run ingest:all` - Scrape all sessions
+- `npm run ingest:legislators` - Scrape House legislators
+- `npm run ingest:bills` - Scrape House bills (includes text extraction and embedding generation)
+- `npm run ingest:senate-bills` - Scrape Senate bills and senators
+- `npm run ingest:all` - Scrape all House sessions
 - `npm run dev` - Start Next.js dev server (from app/ directory)
 - `npm run build` - Build Next.js app (from app/ directory)

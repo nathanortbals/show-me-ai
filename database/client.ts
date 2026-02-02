@@ -363,31 +363,33 @@ export class DatabaseClient {
     legislatorName: string
   ): Promise<string | null> {
     try {
-      // First, find the legislator by name
-      const { data: legislatorData, error: legislatorError } = await this._client
-        .from('legislators')
-        .select('id')
-        .eq('name', legislatorName);
+      // Try to find session_legislator by joining with legislators table
+      // First try exact match
+      let { data: sessionLegData, error: sessionLegError } = await this._client
+        .from('session_legislators')
+        .select('id, legislators!inner(name)')
+        .eq('session_id', sessionId)
+        .eq('legislators.name', legislatorName);
 
-      if (legislatorError) throw legislatorError;
+      if (sessionLegError) throw sessionLegError;
 
-      if (!legislatorData || legislatorData.length === 0) {
-        return null;
+      if (sessionLegData && sessionLegData.length > 0) {
+        return sessionLegData[0].id;
       }
 
-      const legislatorId = legislatorData[0].id;
-
-      // Then find the session_legislator record
-      const { data: sessionLegislatorData, error: sessionLegislatorError } = await this._client
+      // If no exact match, try matching on last name (for Senate bills which only have last name)
+      // This query finds legislators in THIS session whose name ends with the provided name
+      const { data: partialMatchData, error: partialMatchError } = await this._client
         .from('session_legislators')
-        .select('id')
+        .select('id, legislators!inner(name)')
         .eq('session_id', sessionId)
-        .eq('legislator_id', legislatorId);
+        .ilike('legislators.name', `% ${legislatorName}`);
 
-      if (sessionLegislatorError) throw sessionLegislatorError;
+      if (partialMatchError) throw partialMatchError;
 
-      if (sessionLegislatorData && sessionLegislatorData.length > 0) {
-        return sessionLegislatorData[0].id;
+      // Only use partial match if we get exactly one result (unambiguous within session)
+      if (partialMatchData && partialMatchData.length === 1) {
+        return partialMatchData[0].id;
       }
 
       return null;
@@ -936,6 +938,26 @@ export class DatabaseClient {
       if (error) throw error;
     } catch (error) {
       throw new Error(`Failed to mark document embeddings as generated: ${error}`);
+    }
+  }
+
+  /**
+   * Delete all embeddings for a specific bill.
+   * Used to ensure idempotency when re-processing a bill with --force.
+   *
+   * @param billId - Bill UUID
+   */
+  async deleteEmbeddingsForBill(billId: string): Promise<void> {
+    try {
+      // Delete using contains filter for JSONB matching
+      const { error } = await this._client
+        .from('bill_embeddings')
+        .delete()
+        .contains('metadata', { bill_id: billId });
+
+      if (error) throw error;
+    } catch (error) {
+      throw new Error(`Failed to delete embeddings for bill: ${error}`);
     }
   }
 }

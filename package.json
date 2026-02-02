@@ -11,6 +11,7 @@
     "ingest": "tsx ingestion/cli.ts",
     "ingest:legislators": "tsx ingestion/cli.ts scrape-legislators",
     "ingest:bills": "tsx ingestion/cli.ts scrape-bills",
+    "ingest:senate-bills": "tsx ingestion/cli.ts scrape-senate-bills",
     "ingest:all": "tsx ingestion/cli.ts scrape-all"
   },
   "overrides": {
