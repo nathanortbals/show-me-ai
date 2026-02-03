@@ -19,12 +19,6 @@ on:
           - R
           - S1
           - S2
-      scrape_legislators:
-        description: 'Scrape legislators (not needed daily)'
-        required: false
-        default: false
-        type: boolean
-
 jobs:
   # Setup job: Scrape legislators and create bill matrix
   setup:
@@ -60,16 +54,6 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install chromium
-
-      - name: Scrape legislators
-        if: ${{ inputs.scrape_legislators == true }}
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          echo "Scraping House legislators for ${{ steps.set-year.outputs.session_year }} ${{ steps.set-year.outputs.session_code }}"
-          # Run with --bills "" to scrape only legislators (no bills will match empty filter)
-          npm run ingest:house -- --year ${{ steps.set-year.outputs.session_year }} --session-code ${{ steps.set-year.outputs.session_code }} --bills ""
 
       - name: Get bill list and create matrix
         id: set-matrix
