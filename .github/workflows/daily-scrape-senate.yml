@@ -59,11 +59,11 @@ jobs:
         id: set-matrix
         run: |
           echo "Fetching Senate bill list..."
-          BILLS=$(npx tsx ingestion/cli.ts list-senate-bills --year ${{ steps.set-year.outputs.session_year }} --session-code ${{ steps.set-year.outputs.session_code }})
-          echo "Found $(echo $BILLS | jq length) bills"
+          npx tsx ingestion/cli.ts list-senate-bills --year ${{ steps.set-year.outputs.session_year }} --session-code ${{ steps.set-year.outputs.session_code }} --output bills.json
+          echo "Found $(jq length bills.json) bills"
 
           # Split into chunks of 20 and create matrix
-          MATRIX=$(echo $BILLS | jq -c '
+          MATRIX=$(jq -c '
             . as $bills |
             ($bills | length) as $total |
             [range(0; $total; 20)] |
@@ -72,7 +72,7 @@ jobs:
               chunk: .key,
               bills: ($bills[.value:.value+20] | join(","))
             })
-          ')
+          ' bills.json)
 
           echo "Created $(echo $MATRIX | jq length) chunks"
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT

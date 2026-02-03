@@ -8,6 +8,7 @@
 
 import { config } from 'dotenv';
 import { resolve } from 'path';
+import { writeFileSync } from 'fs';
 
 // Load environment variables from .env.local
 config({ path: resolve(process.cwd(), '.env.local') });
@@ -145,6 +146,7 @@ program
   .description('List all bill numbers for a House session (outputs JSON)')
   .option('--year <year>', 'Session year', '2026')
   .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
+  .option('--output <file>', 'Output file path (writes JSON to file instead of stdout)')
   .action(async (options) => {
     const year = parseInt(options.year);
     const sessionCode = options.sessionCode;
@@ -155,7 +157,14 @@ program
     try {
       const bills = await scrapeBillList(page, year, sessionCode);
       const billNumbers = bills.map(b => b.bill_number);
-      console.log(JSON.stringify(billNumbers));
+      const json = JSON.stringify(billNumbers);
+
+      if (options.output) {
+        writeFileSync(options.output, json);
+        console.log(`Wrote ${billNumbers.length} bill numbers to ${options.output}`);
+      } else {
+        console.log(json);
+      }
     } finally {
       await browser.close();
     }
@@ -204,6 +213,7 @@ program
   .description('List all bill numbers for a Senate session (outputs JSON)')
   .option('--year <year>', 'Session year', '2026')
   .option('--session-code <code>', 'Session code (R, S1, S2)', 'R')
+  .option('--output <file>', 'Output file path (writes JSON to file instead of stdout)')
   .action(async (options) => {
     const year = parseInt(options.year);
     const sessionCode = options.sessionCode;
@@ -214,7 +224,14 @@ program
     try {
       const bills = await scrapeSendBillList(page, year, sessionCode);
       const billNumbers = bills.map(b => b.bill_number);
-      console.log(JSON.stringify(billNumbers));
+      const json = JSON.stringify(billNumbers);
+
+      if (options.output) {
+        writeFileSync(options.output, json);
+        console.log(`Wrote ${billNumbers.length} bill numbers to ${options.output}`);
+      } else {
+        console.log(json);
+      }
     } finally {
       await browser.close();
     }
