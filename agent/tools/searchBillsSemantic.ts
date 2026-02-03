@@ -29,7 +29,7 @@ interface BillEmbeddingMetadata {
  * Search for bills using semantic similarity with optional metadata filters
  */
 export const searchBillsSemantic = tool(
-  async ({ query, limit = 20, sessionYear, sessionCode, sponsorName, committeeName }) => {
+  async ({ query, limit = 20, sessionYear, sessionCode, sponsorName, committeeName, chamber }) => {
     const supabase = getSupabaseClient();
 
     // Initialize embeddings and vector store
@@ -68,6 +68,13 @@ export const searchBillsSemantic = tool(
       // Note: This uses JSONB containment - checks if committee_names array includes the value
       if (committeeName) {
         query = query.contains('metadata->committee_names', JSON.stringify([committeeName]));
+      }
+
+      // Filter by chamber (House or Senate) using bill_number prefix
+      // House bills start with H (HB, HJR, HCR), Senate bills start with S (SB, SJR, SCR)
+      if (chamber) {
+        const prefix = chamber.toLowerCase() === 'house' ? 'H%' : 'S%';
+        query = query.ilike('metadata->>bill_number', prefix);
       }
 
       return query;
@@ -168,7 +175,7 @@ ${summarySection}Matched Content: ${content.substring(0, 300)}...
   {
     name: 'search_bills_semantic',
     description:
-      'Search for bills using semantic similarity with optional filters. Use this when the user asks about bill content, topics, or concepts, optionally filtered by session, sponsor, or committee. Examples: "healthcare bills from 2025", "education funding sponsored by Smith", "tax reform in Ways and Means committee". IMPORTANT: The response includes a header showing total results found vs. shown (e.g., "Found 36 matching results. Showing top 5:"). Always communicate this total count to the user so they know if more results are available.',
+      'Search for bills using semantic similarity with optional filters. Use this when the user asks about bill content, topics, or concepts, optionally filtered by session, sponsor, committee, or chamber. Examples: "healthcare bills from 2025", "education funding sponsored by Smith", "tax reform in Ways and Means committee", "senate bills about agriculture". IMPORTANT: The response includes a header showing total results found vs. shown (e.g., "Found 36 matching results. Showing top 5:"). Always communicate this total count to the user so they know if more results are available.',
     schema: z.object({
       query: z.string().describe('Natural language search query describing the bill content or topic'),
       limit: z.number().optional().default(20).describe('Maximum number of results to show'),
@@ -176,6 +183,7 @@ ${summarySection}Matched Content: ${content.substring(0, 300)}...
       sessionCode: z.string().optional().describe('Filter by session code (R for Regular, S1 for Special 1, S2 for Special 2)'),
       sponsorName: z.string().optional().describe('Filter by primary sponsor name (partial match supported)'),
       committeeName: z.string().optional().describe('Filter by committee name'),
+      chamber: z.enum(['house', 'senate']).optional().describe('Filter by legislative chamber (house or senate)'),
     }),
   }
 );
