@@ -377,6 +377,7 @@ export async function scrapeSenateBillsForSession(
             legislator_type: 'Senator',
             party_affiliation: profile.party || null,
             year_elected: profile.year_elected || null,
+            years_served: profile.years_served || null,
             picture_url: profile.photo_url || null,
             is_active: true,
             profile_url: profile.profile_url,

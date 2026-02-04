@@ -15,7 +15,8 @@ export interface SenatorProfile {
   district: string; // e.g., "28"
   photo_url?: string; // -> picture_url
   profile_url: string; // The senator's page URL -> profile_url
-  year_elected?: number; // Derived from first_elected
+  year_elected?: number; // Derived from first_elected or Years of Service
+  years_served?: number; // Calculated from year_elected or service periods
 }
 
 /**
@@ -39,8 +40,10 @@ export async function scrapeSenatorProfile(
   const url = getSenatorProfileUrl(senatorId);
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
 
+  const currentYear = new Date().getFullYear();
+
   const profile = await page.evaluate(
-    (args: { senatorId: string; url: string }): SenatorProfile => {
+    (args: { senatorId: string; url: string; currentYear: number }): SenatorProfile => {
       const result: SenatorProfile = {
         senator_id: args.senatorId,
         name: '',
@@ -71,11 +74,36 @@ export async function scrapeSenatorProfile(
         result.district = districtMatch[1];
       }
 
-      // Extract year elected from "First elected to the Senate: August 2017" or "First elected to the Senate: 2020"
-      // The month is optional - some senators just have the year
+      // Extract year elected and calculate years served
+      // Try active senator format first: "First elected to the Senate: August 2017" or "First elected to the Senate: 2020"
       const electedMatch = bodyText.match(/First elected to the Senate:\s*(?:\w+\s+)?(\d{4})/i);
       if (electedMatch) {
         result.year_elected = parseInt(electedMatch[1], 10);
+        result.years_served = args.currentYear - result.year_elected;
+      } else {
+        // Try past senator format: "Years of Service: 2017-2021, 2021-2024"
+        const serviceMatch = bodyText.match(/Years of Service:\s*([\d\s,\-–]+)/i);
+        if (serviceMatch) {
+          const serviceText = serviceMatch[1];
+          // Extract all year ranges (handles both hyphen and en-dash)
+          const rangeMatches = serviceText.matchAll(/(\d{4})\s*[-–]\s*(\d{4})/g);
+          let totalYears = 0;
+          let firstYear: number | null = null;
+
+          for (const match of rangeMatches) {
+            const startYear = parseInt(match[1], 10);
+            const endYear = parseInt(match[2], 10);
+            if (firstYear === null) {
+              firstYear = startYear;
+            }
+            totalYears += endYear - startYear;
+          }
+
+          if (firstYear !== null) {
+            result.year_elected = firstYear;
+            result.years_served = totalYears;
+          }
+        }
       }
 
       // Extract photo URL
@@ -86,7 +114,7 @@ export async function scrapeSenatorProfile(
 
       return result;
     },
-    { senatorId, url }
+    { senatorId, url, currentYear }
   );
 
   return profile;
