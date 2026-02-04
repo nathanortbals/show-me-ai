@@ -71,8 +71,9 @@ export async function scrapeSenatorProfile(
         result.district = districtMatch[1];
       }
 
-      // Extract year elected from "First elected to the Senate: August 2017"
-      const electedMatch = bodyText.match(/First elected to the Senate:\s*\w+\s*(\d{4})/i);
+      // Extract year elected from "First elected to the Senate: August 2017" or "First elected to the Senate: 2020"
+      // The month is optional - some senators just have the year
+      const electedMatch = bodyText.match(/First elected to the Senate:\s*(?:\w+\s+)?(\d{4})/i);
       if (electedMatch) {
         result.year_elected = parseInt(electedMatch[1], 10);
       }
