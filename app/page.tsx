@@ -161,7 +161,16 @@ export default function Home() {
             rel="noopener noreferrer"
             className="text-neutral-500 underline hover:text-neutral-400"
           >
-            Missouri House of Representatives
+            Missouri House
+          </a>
+          {' '}and{' '}
+          <a
+            href="https://senate.mo.gov"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-neutral-500 underline hover:text-neutral-400"
+          >
+            Senate
           </a>
           . Made by Nathan Ortbals.{' '}
           <a
