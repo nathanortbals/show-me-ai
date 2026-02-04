@@ -111,6 +111,10 @@ class MoHouseBillScraper {
     return sessionLegislatorId;
   }
 
+  /**
+   * Get session legislator by name (for House co-sponsors).
+   * Filters to only match Representatives for disambiguation.
+   */
   async getSessionLegislatorByName(name: string): Promise<string | null> {
     if (!this.sessionId) {
       throw new Error('Session not initialized');
@@ -121,7 +125,8 @@ class MoHouseBillScraper {
       return this.sessionLegislatorCache.get(cacheKey)!;
     }
 
-    const sessionLegislatorId = await this.db.getSessionLegislatorByName(this.sessionId, name);
+    // Pass 'Representative' to filter only reps (avoids conflicts with Senators with same last name)
+    const sessionLegislatorId = await this.db.getSessionLegislatorByName(this.sessionId, name, 'Representative');
 
     if (sessionLegislatorId) {
       this.sessionLegislatorCache.set(cacheKey, sessionLegislatorId);

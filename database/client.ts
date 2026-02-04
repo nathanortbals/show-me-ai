@@ -352,24 +352,64 @@ export class DatabaseClient {
   }
 
   /**
+   * Look up a session_legislator by the legislator's profile URL.
+   * Used for Senate bills where we have the sponsor_url which matches the stored profile_url.
+   *
+   * @param sessionId - Session UUID
+   * @param profileUrl - Legislator's profile URL (e.g., "https://www.senate.mo.gov/Senators/Member/28")
+   * @returns session_legislator UUID if found, null otherwise
+   */
+  async getSessionLegislatorByProfileUrl(
+    sessionId: string,
+    profileUrl: string
+  ): Promise<string | null> {
+    try {
+      const { data, error } = await this._client
+        .from('session_legislators')
+        .select('id, legislators!inner(profile_url)')
+        .eq('session_id', sessionId)
+        .eq('legislators.profile_url', profileUrl);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        return data[0].id;
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Failed to get session legislator by profile URL: ${error}`);
+      return null;
+    }
+  }
+
+  /**
    * Look up a session_legislator by legislator name for a specific session.
    *
    * @param sessionId - Session UUID
    * @param legislatorName - Name of the legislator
+   * @param legislatorType - Optional type filter ('Senator' or 'Representative') for disambiguation
    * @returns session_legislator UUID if found, null otherwise
    */
   async getSessionLegislatorByName(
     sessionId: string,
-    legislatorName: string
+    legislatorName: string,
+    legislatorType?: 'Senator' | 'Representative'
   ): Promise<string | null> {
     try {
       // Try to find session_legislator by joining with legislators table
       // First try exact match
-      let { data: sessionLegData, error: sessionLegError } = await this._client
+      let exactQuery = this._client
         .from('session_legislators')
-        .select('id, legislators!inner(name)')
+        .select('id, legislators!inner(name, legislator_type)')
         .eq('session_id', sessionId)
         .eq('legislators.name', legislatorName);
+
+      if (legislatorType) {
+        exactQuery = exactQuery.eq('legislators.legislator_type', legislatorType);
+      }
+
+      const { data: sessionLegData, error: sessionLegError } = await exactQuery;
 
       if (sessionLegError) throw sessionLegError;
 
@@ -379,15 +419,21 @@ export class DatabaseClient {
 
       // If no exact match, try matching on last name (for Senate bills which only have last name)
       // This query finds legislators in THIS session whose name ends with the provided name
-      const { data: partialMatchData, error: partialMatchError } = await this._client
+      let partialQuery = this._client
         .from('session_legislators')
-        .select('id, legislators!inner(name)')
+        .select('id, legislators!inner(name, legislator_type)')
         .eq('session_id', sessionId)
         .ilike('legislators.name', `% ${legislatorName}`);
 
+      if (legislatorType) {
+        partialQuery = partialQuery.eq('legislators.legislator_type', legislatorType);
+      }
+
+      const { data: partialMatchData, error: partialMatchError } = await partialQuery;
+
       if (partialMatchError) throw partialMatchError;
 
-      // Only use partial match if we get exactly one result (unambiguous within session)
+      // Only use partial match if we get exactly one result (unambiguous within filtered set)
       if (partialMatchData && partialMatchData.length === 1) {
         return partialMatchData[0].id;
       }

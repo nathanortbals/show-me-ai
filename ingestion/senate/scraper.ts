@@ -114,8 +114,32 @@ class MoSenateBillScraper {
   }
 
   /**
+   * Get session legislator by profile URL (from sponsor URL).
+   * This is the most reliable method as it directly matches the stored profile_url.
+   */
+  async getSessionLegislatorByProfileUrl(profileUrl: string): Promise<string | null> {
+    if (!this.sessionId) {
+      throw new Error('Session not initialized');
+    }
+
+    const cacheKey = `profile_url:${profileUrl}`;
+    if (this.sessionLegislatorCache.has(cacheKey)) {
+      return this.sessionLegislatorCache.get(cacheKey)!;
+    }
+
+    const sessionLegislatorId = await this.db.getSessionLegislatorByProfileUrl(this.sessionId, profileUrl);
+
+    if (sessionLegislatorId) {
+      this.sessionLegislatorCache.set(cacheKey, sessionLegislatorId);
+    }
+
+    return sessionLegislatorId;
+  }
+
+  /**
    * Get session legislator by name (for Senate sponsors).
    * Senate bills use legislator names, not districts.
+   * Filters to only match Senators for disambiguation.
    */
   async getSessionLegislatorByName(name: string): Promise<string | null> {
     if (!this.sessionId) {
@@ -127,7 +151,8 @@ class MoSenateBillScraper {
       return this.sessionLegislatorCache.get(cacheKey)!;
     }
 
-    const sessionLegislatorId = await this.db.getSessionLegislatorByName(this.sessionId, name);
+    // Pass 'Senator' to filter only senators (avoids conflicts with House reps with same last name)
+    const sessionLegislatorId = await this.db.getSessionLegislatorByName(this.sessionId, name, 'Senator');
 
     if (sessionLegislatorId) {
       this.sessionLegislatorCache.set(cacheKey, sessionLegislatorId);
@@ -163,16 +188,16 @@ class MoSenateBillScraper {
     // Prepare sponsors data
     const sponsorsData: SponsorData[] = [];
 
-    // Primary sponsor - for Senate bills, we use the sponsor name
-    if (billData.sponsor) {
-      const sessionLegislatorId = await this.getSessionLegislatorByName(billData.sponsor);
+    // Primary sponsor - match by sponsor_url (profile URL)
+    if (billData.sponsor_url) {
+      const sessionLegislatorId = await this.getSessionLegislatorByProfileUrl(billData.sponsor_url);
       if (sessionLegislatorId) {
         sponsorsData.push({
           session_legislator_id: sessionLegislatorId,
           is_primary: true,
         });
       } else {
-        console.log(`  Warning: Sponsor '${billData.sponsor}' not found in session_legislators`);
+        console.log(`  Warning: Sponsor '${billData.sponsor}' (URL: ${billData.sponsor_url}) not found in session_legislators`);
       }
     }
 
