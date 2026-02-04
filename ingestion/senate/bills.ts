@@ -180,10 +180,17 @@ export async function scrapeSendBillDetails(
       result.bill_number = billMatch[1];
     }
 
-    // Extract title - it follows the bill number on a new line
-    const titleMatch = bodyText.match(/^S[A-Z]+ \d+\n(.+?)(?:\nSponsor:)/s);
-    if (titleMatch) {
-      result.title = titleMatch[1].trim();
+    // Extract title - it follows the bill number and precedes "Sponsor:"
+    // The page has multiple formats, so try several patterns
+    // Pattern 1: Bill number on its own line, title on next line, then Sponsor:
+    const titleMatch1 = bodyText.match(/\bS[A-Z]+ \d+\s*\n+([^\n]+)\n+\s*Sponsor:/);
+    // Pattern 2: From page title "SB834 - Title Here"
+    const titleMatch2 = bodyText.match(/^S[A-Z]+\d+\s*-\s*(.+?)(?:\n|$)/m);
+
+    if (titleMatch1) {
+      result.title = titleMatch1[1].trim();
+    } else if (titleMatch2) {
+      result.title = titleMatch2[1].trim();
     }
 
     // Extract LR Number

@@ -47,7 +47,6 @@ export const getBillByNumber = tool(
         id,
         bill_number,
         title,
-        description,
         lr_number,
         last_action,
         proposed_effective_date,
@@ -108,7 +107,6 @@ export const getBillByNumber = tool(
     const result = `Bill: ${billData.bill_number} (ID: ${billData.id})
 Session: ${sessions?.year} ${sessions?.session_code}
 Title: ${billData.title || 'N/A'}
-Description: ${billData.description || 'N/A'}
 LR Number: ${billData.lr_number || 'N/A'}
 Last Action: ${billData.last_action || 'N/A'}
 Proposed Effective Date: ${billData.proposed_effective_date || 'N/A'}

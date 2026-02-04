@@ -13,7 +13,6 @@ interface SponsoredBillResult {
     id: string;
     bill_number: string;
     title: string | null;
-    description: string | null;
     last_action: string | null;
     sessions: {
       year: number;
@@ -76,7 +75,6 @@ export const getLegislatorBills = tool(
           id,
           bill_number,
           title,
-          description,
           last_action,
           sessions(year, session_code)
         )
@@ -112,7 +110,7 @@ export const getLegislatorBills = tool(
       primaryBills.forEach((b) => {
         const bill = b.bills!;
         const session = bill.sessions;
-        results.push(`- ${bill.bill_number} (ID: ${bill.id}) (${session?.year} ${session?.session_code}): ${bill.title || bill.description || 'No title'}`);
+        results.push(`- ${bill.bill_number} (ID: ${bill.id}) (${session?.year} ${session?.session_code}): ${bill.title || 'No title'}`);
       });
     }
 
@@ -122,7 +120,7 @@ export const getLegislatorBills = tool(
       coBills.forEach((b) => {
         const bill = b.bills!;
         const session = bill.sessions;
-        results.push(`- ${bill.bill_number} (ID: ${bill.id}) (${session?.year} ${session?.session_code}): ${bill.title || bill.description || 'No title'}`);
+        results.push(`- ${bill.bill_number} (ID: ${bill.id}) (${session?.year} ${session?.session_code}): ${bill.title || 'No title'}`);
       });
     }
 

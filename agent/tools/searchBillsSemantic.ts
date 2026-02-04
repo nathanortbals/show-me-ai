@@ -106,7 +106,7 @@ export const searchBillsSemantic = tool(
 
       const { data: bills } = await supabase
         .from('bills')
-        .select('id, title, description')
+        .select('id, title')
         .in('id', billIds);
 
       const billsMap = new Map(bills?.map(b => [b.id, b]) || []);
@@ -146,9 +146,7 @@ export const searchBillsSemantic = tool(
         const similarity = 1 - score;
 
         // Format with summary and matched content sections
-        const summarySection = billData?.description
-          ? `Summary: ${billData.description}\n`
-          : billData?.title
+        const summarySection = billData?.title
           ? `Summary: ${billData.title}\n`
           : '';
 

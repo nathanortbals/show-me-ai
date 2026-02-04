@@ -151,7 +151,6 @@ class MoSenateBillScraper {
     const billRecord: Omit<Database['public']['Tables']['bills']['Insert'], 'session_id'> = {
       bill_number: billData.bill_number,
       title: billData.title,
-      description: billData.description,
       lr_number: billData.lr_number,
       bill_string: billData.bill_string,
       last_action: billData.last_action,
@@ -467,13 +466,13 @@ export async function scrapeSenateBillsForSession(
         }
 
         // Merge and insert to database
+        // Use title from details page, fall back to description from list page
         const merged: BillData = {
           bill_number: billNumber,
           bill_url: bill.bill_url,
           sponsor: bill.sponsor || details.sponsor,
           sponsor_url: bill.sponsor_url || details.sponsor_url,
-          description: bill.description,
-          title: details.title,
+          title: details.title || bill.description,
           lr_number: details.lr_number,
           last_action: details.last_action,
           proposed_effective_date: details.proposed_effective_date,

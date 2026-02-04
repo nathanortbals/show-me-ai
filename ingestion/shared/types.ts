@@ -57,7 +57,6 @@ export interface DocumentInfo extends ScrapedDocument {
 export interface BillData {
   bill_number: string;
   title?: string;
-  description?: string;
   lr_number?: string;
   sponsor?: string;
   sponsor_url?: string;

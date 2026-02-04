@@ -26,7 +26,6 @@ export interface BillDetails {
   id: string;
   bill_number: string;
   title: string | null;
-  description: string | null;
   lr_number: string | null;
   last_action: string | null;
   proposed_effective_date: string | null;

@@ -222,7 +222,6 @@ export type Database = {
           bill_url: string | null
           calendar_status: string | null
           created_at: string | null
-          description: string | null
           hearing_status: string | null
           id: string
           last_action: string | null
@@ -238,7 +237,6 @@ export type Database = {
           bill_url?: string | null
           calendar_status?: string | null
           created_at?: string | null
-          description?: string | null
           hearing_status?: string | null
           id?: string
           last_action?: string | null
@@ -254,7 +252,6 @@ export type Database = {
           bill_url?: string | null
           calendar_status?: string | null
           created_at?: string | null
-          description?: string | null
           hearing_status?: string | null
           id?: string
           last_action?: string | null

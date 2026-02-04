@@ -57,15 +57,6 @@ export default function BillHeader({ bill }: BillHeaderProps) {
       <h3 className="text-lg font-semibold leading-snug text-white">
         {bill.title || 'No title available'}
       </h3>
-
-      {/* Description - only show if it adds info beyond the title */}
-      {bill.description &&
-        bill.title &&
-        !bill.description.includes(bill.title) && (
-          <p className="mt-2 text-sm leading-relaxed text-neutral-400">
-            {bill.description}
-          </p>
-        )}
     </div>
   );
 }

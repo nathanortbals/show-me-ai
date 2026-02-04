@@ -148,7 +148,6 @@ class MoHouseBillScraper {
     > = {
       bill_number: billData.bill_number,
       title: billData.title,
-      description: billData.description,
       lr_number: billData.lr_number,
       bill_string: billData.bill_string,
       last_action: billData.last_action,
@@ -449,9 +448,11 @@ export async function scrapeBillsForSession(
         }
 
         // Merge and insert to database
+        // Use title from details page, fall back to description from list page
         const merged: BillData = {
           ...bill,
           ...details,
+          title: details.title || bill.description,
           cosponsors,
           actions,
           hearings,
