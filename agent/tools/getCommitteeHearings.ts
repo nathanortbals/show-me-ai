@@ -30,7 +30,7 @@ interface HearingWithRelations {
  * Get committee hearing information
  */
 export const getCommitteeHearings = tool(
-  async ({ billNumber, committeeName, upcomingOnly, limit }) => {
+  async ({ billNumber, committeeName, upcomingOnly, pastDays, limit }) => {
     const supabase = getSupabaseClient();
 
     let query = supabase
@@ -78,14 +78,23 @@ export const getCommitteeHearings = tool(
       query = query.eq('committee_id', committeeData.id);
     }
 
-    // Filter to upcoming hearings only (today or future)
+    // Date filtering
+    const today = new Date().toISOString().split('T')[0];
+
     if (upcomingOnly) {
-      const today = new Date().toISOString().split('T')[0];
+      // Filter to upcoming hearings only (today or future)
       query = query.gte('hearing_date', today);
+    } else if (pastDays && pastDays > 0) {
+      // Filter to recent past hearings (within pastDays)
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - pastDays);
+      const pastDateStr = pastDate.toISOString().split('T')[0];
+      query = query.gte('hearing_date', pastDateStr).lt('hearing_date', today);
     }
 
-    // Order by date (ascending for upcoming, descending for past)
-    query = query.order('hearing_date', { ascending: upcomingOnly ?? true });
+    // Order by date (ascending for upcoming, descending for past/recent)
+    const sortAscending = upcomingOnly === true;
+    query = query.order('hearing_date', { ascending: sortAscending });
 
     // Apply limit
     if (limit && limit > 0) {
@@ -99,6 +108,9 @@ export const getCommitteeHearings = tool(
     if (error || !data || data.length === 0) {
       if (upcomingOnly) {
         return 'No upcoming hearings found.';
+      }
+      if (pastDays) {
+        return `No hearings found in the past ${pastDays} days.`;
       }
       return 'No hearings found.';
     }
@@ -123,11 +135,12 @@ Location: ${hearing.location || 'TBD'}
   {
     name: 'get_committee_hearings',
     description:
-      'Get committee hearing information. Use this when the user asks about hearings, including upcoming hearings. Examples: "Which bills have upcoming hearings?", "When is HB1366 being heard?", "What bills are scheduled in the Health Committee?", "Show me hearings this week"',
+      'Get committee hearing information. Use this when the user asks about hearings - both upcoming and recent past hearings. Examples: "Which bills have upcoming hearings?", "What hearings happened this week?", "When is HB1366 being heard?", "What bills were in the Health Committee recently?"',
     schema: z.object({
       billNumber: z.string().optional().describe('Optional bill number to filter by'),
       committeeName: z.string().optional().describe('Optional committee name to filter by'),
       upcomingOnly: z.boolean().optional().describe('Set to true to only show hearings scheduled for today or in the future'),
+      pastDays: z.number().optional().describe('Number of days to look back for recent past hearings (e.g., 7 for last week, 30 for last month). Cannot be used with upcomingOnly.'),
       limit: z.number().optional().describe('Maximum number of results to return (default 25)'),
     }),
   }
