@@ -10,6 +10,7 @@ import {
   SupabaseFilterRPCCall,
 } from '@langchain/community/vectorstores/supabase';
 import { getSupabaseClient } from '@/database/client';
+import { MILESTONE_PATTERNS, MILESTONES, type Milestone } from './searchBillsByMilestone';
 
 // Type for embedding metadata
 interface BillEmbeddingMetadata {
@@ -29,8 +30,24 @@ interface BillEmbeddingMetadata {
  * Search for bills using semantic similarity with optional metadata filters
  */
 export const searchBillsSemantic = tool(
-  async ({ query, limit = 20, sessionYear, sessionCode, sponsorName, committeeName, chamber }) => {
+  async ({ query, limit = 20, sessionYear, sessionCode, sponsorName, committeeName, chamber, milestone }) => {
     const supabase = getSupabaseClient();
+
+    // If milestone filter is specified, first get bill IDs that have reached that milestone
+    let milestoneBillIds: Set<string> | null = null;
+    if (milestone) {
+      const pattern = MILESTONE_PATTERNS[milestone as Milestone];
+      const { data: milestoneData } = await supabase
+        .from('bill_actions')
+        .select('bill_id')
+        .ilike('description', pattern);
+
+      if (!milestoneData || milestoneData.length === 0) {
+        return `No bills found that have ${milestone.replace(/_/g, ' ')} matching your query.`;
+      }
+
+      milestoneBillIds = new Set(milestoneData.map((row) => row.bill_id));
+    }
 
     // Initialize embeddings and vector store
     const embeddings = new OpenAIEmbeddings({
@@ -94,9 +111,22 @@ export const searchBillsSemantic = tool(
         return 'No bills found matching that query with the given filters.';
       }
 
+      // Filter by milestone if specified
+      let filteredResults = allResults;
+      if (milestoneBillIds) {
+        filteredResults = allResults.filter(([doc]) => {
+          const billId = (doc.metadata as BillEmbeddingMetadata).bill_id;
+          return billId && milestoneBillIds.has(billId);
+        });
+
+        if (filteredResults.length === 0) {
+          return `No bills found that have ${milestone!.replace(/_/g, ' ')} matching your query.`;
+        }
+      }
+
       // Only format the requested limit
-      const resultsToShow = allResults.slice(0, limit);
-      const totalCount = allResults.length;
+      const resultsToShow = filteredResults.slice(0, limit);
+      const totalCount = filteredResults.length;
       const hasMore = totalCount > limit;
 
       // Fetch bill summaries for all results to show
@@ -182,6 +212,12 @@ ${summarySection}Matched Content: ${content.substring(0, 300)}...
       sponsorName: z.string().optional().describe('Filter by primary sponsor name (partial match supported)'),
       committeeName: z.string().optional().describe('Filter by committee name'),
       chamber: z.enum(['house', 'senate']).optional().describe('Filter by legislative chamber (house or senate)'),
+      milestone: z
+        .enum(MILESTONES)
+        .optional()
+        .describe(
+          'Filter to bills that have reached this legislative milestone. Options: passed_house, passed_senate, passed_both_chambers, signed, vetoed. Results include bills at this milestone OR further (e.g., passed_house includes bills later signed into law).'
+        ),
     }),
   }
 );

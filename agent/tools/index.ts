@@ -11,6 +11,7 @@ export { getBillTimeline } from './getBillTimeline';
 export { getCommitteeInfo } from './getCommitteeInfo';
 export { getCommitteeHearings } from './getCommitteeHearings';
 export { searchBillsByYear } from './searchBillsByYear';
+export { searchBillsByMilestone } from './searchBillsByMilestone';
 
 // Export utils for potential use by other modules
 export * from './utils';
@@ -24,6 +25,7 @@ import { getBillTimeline } from './getBillTimeline';
 import { getCommitteeInfo } from './getCommitteeInfo';
 import { getCommitteeHearings } from './getCommitteeHearings';
 import { searchBillsByYear } from './searchBillsByYear';
+import { searchBillsByMilestone } from './searchBillsByMilestone';
 
 /**
  * Get all agent tools
@@ -38,5 +40,6 @@ export function getTools() {
     getCommitteeInfo,
     getCommitteeHearings,
     searchBillsByYear,
+    searchBillsByMilestone,
   ];
 }
