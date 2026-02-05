@@ -14,6 +14,7 @@ interface HearingWithRelations {
   hearing_time_text: string | null;
   location: string | null;
   bills: {
+    id: string;
     bill_number: string;
     title: string | null;
     sessions: {
@@ -40,7 +41,7 @@ export const getCommitteeHearings = tool(
         hearing_time,
         hearing_time_text,
         location,
-        bills(bill_number, title, sessions(year, session_code)),
+        bills(id, bill_number, title, sessions(year, session_code)),
         committees(name)
       `);
 
@@ -106,12 +107,13 @@ export const getCommitteeHearings = tool(
 
     const typedHearings = data as unknown as HearingWithRelations[];
     const results = typedHearings.map((hearing) => {
-      const bills = hearing.bills;
+      const bill = hearing.bills;
       const committee = hearing.committees?.name || 'Unknown';
-      const sessions = bills?.sessions;
-      const title = bills?.title ? ` - ${bills.title.substring(0, 80)}${bills.title.length > 80 ? '...' : ''}` : '';
+      const sessions = bill?.sessions;
+      const title = bill?.title ? ` - ${bill.title.substring(0, 80)}${bill.title.length > 80 ? '...' : ''}` : '';
 
-      return `Bill: ${bills?.bill_number || 'Unknown'}${title} (${sessions?.year || ''} ${sessions?.session_code || ''})
+      return `Bill: ${bill?.bill_number || 'Unknown'} (ID: ${bill?.id || 'Unknown'})${title}
+Session: ${sessions?.year || ''} ${sessions?.session_code || ''}
 Committee: ${committee}
 Date: ${hearing.hearing_date || 'TBD'}
 Time: ${hearing.hearing_time_text || hearing.hearing_time || 'TBD'}
