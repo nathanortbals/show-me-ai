@@ -8,6 +8,7 @@ export { getBillByNumber } from './getBillByNumber';
 export { getLegislatorInfo } from './getLegislatorInfo';
 export { getLegislatorBills } from './getLegislatorBills';
 export { getBillTimeline } from './getBillTimeline';
+export { getCommitteeInfo } from './getCommitteeInfo';
 export { getCommitteeHearings } from './getCommitteeHearings';
 export { searchBillsByYear } from './searchBillsByYear';
 
@@ -20,6 +21,7 @@ import { getBillByNumber } from './getBillByNumber';
 import { getLegislatorInfo } from './getLegislatorInfo';
 import { getLegislatorBills } from './getLegislatorBills';
 import { getBillTimeline } from './getBillTimeline';
+import { getCommitteeInfo } from './getCommitteeInfo';
 import { getCommitteeHearings } from './getCommitteeHearings';
 import { searchBillsByYear } from './searchBillsByYear';
 
@@ -33,6 +35,7 @@ export function getTools() {
     getLegislatorInfo,
     getLegislatorBills,
     getBillTimeline,
+    getCommitteeInfo,
     getCommitteeHearings,
     searchBillsByYear,
   ];

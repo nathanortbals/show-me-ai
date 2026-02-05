@@ -30,7 +30,7 @@ interface HearingWithRelations {
  * Get committee hearing information
  */
 export const getCommitteeHearings = tool(
-  async ({ billNumber, committeeName, upcomingOnly, pastDays, limit }) => {
+  async ({ billNumber, committeeId, upcomingOnly, pastDays, limit }) => {
     const supabase = getSupabaseClient();
 
     let query = supabase
@@ -62,20 +62,9 @@ export const getCommitteeHearings = tool(
       query = query.eq('bill_id', billData.id);
     }
 
-    // Filter by committee name if provided
-    if (committeeName) {
-      // Get committee ID
-      const { data: committeeData } = await supabase
-        .from('committees')
-        .select('id')
-        .ilike('name', `%${committeeName}%`)
-        .single();
-
-      if (!committeeData) {
-        return `Committee matching '${committeeName}' not found.`;
-      }
-
-      query = query.eq('committee_id', committeeData.id);
+    // Filter by committee ID if provided
+    if (committeeId) {
+      query = query.eq('committee_id', committeeId);
     }
 
     // Date filtering
@@ -135,10 +124,10 @@ Location: ${hearing.location || 'TBD'}
   {
     name: 'get_committee_hearings',
     description:
-      'Get committee hearing information. Use this when the user asks about hearings - both upcoming and recent past hearings. Examples: "Which bills have upcoming hearings?", "What hearings happened this week?", "When is HB1366 being heard?", "What bills were in the Health Committee recently?"',
+      'Get committee hearing information. Use this when the user asks about hearings - both upcoming and recent past hearings. If filtering by committee, first use get_committee_info to find the committee ID. Examples: "Which bills have upcoming hearings?", "What hearings happened this week?", "When is HB1366 being heard?"',
     schema: z.object({
       billNumber: z.string().optional().describe('Optional bill number to filter by'),
-      committeeName: z.string().optional().describe('Optional committee name to filter by'),
+      committeeId: z.string().optional().describe('Optional committee UUID to filter by (use get_committee_info to find the ID first)'),
       upcomingOnly: z.boolean().optional().describe('Set to true to only show hearings scheduled for today or in the future'),
       pastDays: z.number().optional().describe('Number of days to look back for recent past hearings (e.g., 7 for last week, 30 for last month). Cannot be used with upcomingOnly.'),
       limit: z.number().optional().describe('Maximum number of results to return (default 25)'),
